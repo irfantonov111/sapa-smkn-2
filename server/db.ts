@@ -30,7 +30,7 @@ import {
   INITIAL_ANNOUNCEMENTS,
   INITIAL_MOOD_CHECKS
 } from '../src/services/seedData';
-import { decryptNip } from '../src/utils/crypto';
+import { decryptNip, hashPassword } from '../src/utils/crypto';
 
 const { Pool } = pg;
 
@@ -81,17 +81,23 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
       ssl: process.env.NODE_ENV === 'production' || connectionString.includes('supabase') || connectionString.includes('neon')
         ? { rejectUnauthorized: false }
         : false,
-      max: 10,
-      idleTimeoutMillis: 30000,
+      max: 5,
+      idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 5000,
     });
 
-    const client = await pool.connect();
-    console.log('[ADVOCARE DB] Connected successfully to PostgreSQL / Supabase!');
-    isPostgresConnected = true;
+    // Prevent unhandled error crashes on idle clients (critical for serverless / Supabase)
+    pool.on('error', (err) => {
+      console.warn('[ADVOCARE DB] PostgreSQL client warning (handled gracefully):', err.message);
+    });
 
-    // Run automatic migration to create tables if they don't exist
-    await client.query(`
+    const client = await pool.connect();
+    try {
+      console.log('[ADVOCARE DB] Connected successfully to PostgreSQL / Supabase!');
+      isPostgresConnected = true;
+
+      // Run automatic migration to create tables if they don't exist
+      await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(50) PRIMARY KEY,
         name VARCHAR(150) NOT NULL,
@@ -263,80 +269,28 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
       ALTER TABLE reports ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
     `);
 
-    // Check if initial users exist, if not, seed them
-    const userCount = await client.query('SELECT COUNT(*) FROM users');
-    if (parseInt(userCount.rows[0].count, 10) === 0) {
-      console.log('[ADVOCARE DB] Seeding initial data into PostgreSQL...');
-      for (const u of INITIAL_USERS) {
-        await client.query(
-          'INSERT INTO users (id, name, email, password, password_changed, role, avatar, phone, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING',
-          [u.id, u.name, u.email, u.password || null, Boolean(u.password_changed), u.role, u.avatar || null, u.phone || null, u.created_at]
-        );
-      }
-      for (const c of INITIAL_CLASSES) {
-        await client.query(
-          'INSERT INTO classes (id, name, grade, major, homeroom_teacher_id, bk_teacher_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING',
-          [c.id, c.name, c.grade, c.major, c.homeroom_teacher_id, c.bk_teacher_id || null]
-        );
-      }
-      for (const t of INITIAL_TEACHERS) {
-        await client.query(
-          'INSERT INTO teachers (id, user_id, nip, teacher_type, specialization, room, bio, available_hours, is_active, assigned_class_ids, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING',
-          [
-            t.id,
-            t.user_id,
-            t.nip,
-            t.teacher_type,
-            t.specialization || null,
-            t.room || null,
-            t.bio || null,
-            t.available_hours || null,
-            t.is_active ?? true,
-            JSON.stringify(t.assigned_class_ids || []),
-            t.created_at
-          ]
-        );
-      }
-      for (const s of INITIAL_STUDENTS) {
-        await client.query(
-          'INSERT INTO students (id, user_id, nis, class_id, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING',
-          [s.id, s.user_id, s.nis, s.class_id, s.created_at]
-        );
-      }
-      for (const cat of INITIAL_CATEGORIES) {
-        await client.query(
-          'INSERT INTO categories (id, name, description, icon, color, active) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING',
-          [cat.id, cat.name, cat.description, cat.icon, cat.color, cat.active]
-        );
-      }
-      for (const r of INITIAL_REPORTS) {
-        await client.query(
-          'INSERT INTO reports (id, report_code, student_id, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT DO NOTHING',
-          [r.id, r.report_code, r.student_id, r.category_id, r.assigned_to, (r as any).assigned_teacher_id || null, r.title, r.description, r.urgency, r.privacy, r.status, r.created_at, r.updated_at]
-        );
-      }
-      for (const m of INITIAL_MESSAGES) {
-        await client.query(
-          'INSERT INTO messages (id, report_id, sender_id, message, created_at, is_read) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING',
-          [m.id, m.report_id, m.sender_id, m.message, m.created_at, m.is_read]
-        );
-      }
-      for (const h of INITIAL_STATUS_HISTORY) {
-        await client.query(
-          'INSERT INTO report_status_history (id, report_id, status, changed_by, note, created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING',
-          [h.id, h.report_id, h.status, h.changed_by, h.note || null, h.created_at]
-        );
-      }
-      for (const a of INITIAL_ANNOUNCEMENTS) {
-        await client.query(
-          'INSERT INTO announcements (id, title, content, author_id, author_name, author_role, author_avatar, target_grade, attachments, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING',
-          [a.id, a.title, a.content, a.author_id || null, a.author_name, a.author_role, a.author_avatar || null, a.target_grade, JSON.stringify(a.attachments || []), a.created_at]
-        );
-      }
-      console.log('[ADVOCARE DB] PostgreSQL initial seeding completed!');
-    }
+      // Fast check: if users are empty, seed only essential admin & categories in a single fast query (<50ms)
+      const userCount = await client.query('SELECT COUNT(*) FROM users');
+      if (parseInt(userCount.rows[0].count, 10) === 0) {
+        console.log('[ADVOCARE DB] Seeding base administrator into PostgreSQL...');
+        await client.query(`
+          INSERT INTO users (id, name, email, password, password_changed, role, created_at)
+          VALUES 
+            ('usr-admin-1', 'Administrator SAPA', 'admin@smk.sch.id', '${hashPassword('admin123')}', false, 'admin', CURRENT_TIMESTAMP)
+          ON CONFLICT DO NOTHING;
 
-    client.release();
+          INSERT INTO categories (id, name, description, icon, color, active) VALUES
+            ('cat-1', 'Kesulitan Belajar', 'Kendala materi pelajaran, pemahaman konsep, tugas, atau metode belajar guru', 'BookOpen', 'blue', true),
+            ('cat-2', 'Bullying / Perundungan', 'Tindakan intimidasi fisik, verbal, pengucilan, atau cyberbullying', 'AlertTriangle', 'rose', true),
+            ('cat-3', 'Masalah Pertemanan', 'Konflik antarteman, adaptasi sosial di kelas, rasa cemas dikucilkan', 'Users', 'amber', true),
+            ('cat-4', 'Masukan & Saran', 'Aspirasi fasilitas sekolah, kebersihan, kegiatan ekstrakurikuler, atau KBM', 'Lightbulb', 'emerald', true),
+            ('cat-5', 'Masalah Lainnya', 'Kendala personal, keluarga, motivasi diri, atau hal lain yang ingin diceritakan', 'MessageCircle', 'indigo', true)
+          ON CONFLICT DO NOTHING;
+        `);
+      }
+    } finally {
+      client.release();
+    }
     return { isPostgres: true };
   } catch (err: any) {
     console.warn('[ADVOCARE DB] Warning: PostgreSQL connection failed. Falling back to in-memory store:', err.message);
@@ -407,9 +361,16 @@ export async function getUserByIdentifier(identifier: string): Promise<User | nu
   if (byEmail) return byEmail;
 
   // 2. Check student NIS
-  const student = memoryStore.students.find(s => s.nis.toLowerCase() === trimmed.toLowerCase());
-  if (student) {
-    const user = await getUserById(student.user_id);
+  let studentUserId: string | null = null;
+  if (isPostgresConnected && pool) {
+    const sRes = await pool.query('SELECT user_id FROM students WHERE LOWER(nis) = LOWER($1) LIMIT 1', [trimmed]);
+    if (sRes.rows[0]) studentUserId = sRes.rows[0].user_id;
+  } else {
+    const s = memoryStore.students.find(s => s.nis.toLowerCase() === trimmed.toLowerCase());
+    if (s) studentUserId = s.user_id;
+  }
+  if (studentUserId) {
+    const user = await getUserById(studentUserId);
     if (user) return user;
   }
 
