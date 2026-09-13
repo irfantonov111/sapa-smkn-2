@@ -1,0 +1,192 @@
+-- ==============================================================================
+-- SAPA (Sarana Pendampingan dan Asistensi Siswa) PostgreSQL Database Schema
+-- Siap digunakan di Supabase, Neon, Vercel Postgres, atau PostgreSQL Lokal.
+-- ==============================================================================
+
+-- 1. Users (Kredensial Pengguna: Siswa, Guru, Admin)
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    password TEXT,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('siswa', 'guru', 'admin')),
+    avatar TEXT,
+    phone VARCHAR(30),
+    password_changed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Classes (Rombongan Belajar / Kelas Sekolah: TKJ, TKP, TBKR)
+CREATE TABLE IF NOT EXISTS classes (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    grade VARCHAR(20) NOT NULL,
+    major VARCHAR(100) NOT NULL,
+    homeroom_teacher_id VARCHAR(50),
+    bk_teacher_id VARCHAR(50)
+);
+
+-- 3. Students (Profil Siswa)
+CREATE TABLE IF NOT EXISTS students (
+    id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    nis VARCHAR(50) UNIQUE NOT NULL,
+    class_id VARCHAR(50) REFERENCES classes(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 4. Teachers (Profil Guru: Guru BK atau Wali Kelas)
+CREATE TABLE IF NOT EXISTS teachers (
+    id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    nip VARCHAR(255) UNIQUE NOT NULL,
+    teacher_type VARCHAR(30) NOT NULL CHECK (teacher_type IN ('guru_bk', 'wali_kelas')),
+    specialization VARCHAR(255),
+    room VARCHAR(100),
+    bio TEXT,
+    available_hours VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    assigned_class_ids JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 5. Categories (Kategori Aduan / Bimbingan)
+CREATE TABLE IF NOT EXISTS categories (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    icon VARCHAR(50) DEFAULT 'MessageCircle',
+    color VARCHAR(30) DEFAULT 'blue',
+    active BOOLEAN DEFAULT TRUE
+);
+
+-- 6. Reports (Data Aduan / Bimbingan Konseling Siswa)
+CREATE TABLE IF NOT EXISTS reports (
+    id VARCHAR(50) PRIMARY KEY,
+    report_code VARCHAR(30) UNIQUE NOT NULL,
+    student_id VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    category_id VARCHAR(50) NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    assigned_to VARCHAR(30) NOT NULL CHECK (assigned_to IN ('guru_bk', 'wali_kelas')),
+    assigned_teacher_id VARCHAR(50) REFERENCES teachers(id) ON DELETE SET NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    urgency VARCHAR(20) NOT NULL CHECK (urgency IN ('rendah', 'sedang', 'tinggi')),
+    privacy VARCHAR(20) NOT NULL CHECK (privacy IN ('terbuka', 'terbatas', 'anonim')),
+    status VARCHAR(30) NOT NULL DEFAULT 'terkirim' CHECK (status IN ('terkirim', 'dibaca', 'direspons', 'ditindaklanjuti', 'selesai')),
+    attachments JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- 7. Messages (Obrolan Interaktif Dua Arah Siswa & Guru)
+CREATE TABLE IF NOT EXISTS messages (
+    id VARCHAR(50) PRIMARY KEY,
+    report_id VARCHAR(50) NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    sender_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    is_read BOOLEAN DEFAULT FALSE
+);
+
+-- 8. Report Status History (Audit Trail Perkembangan Penanganan)
+CREATE TABLE IF NOT EXISTS report_status_history (
+    id VARCHAR(50) PRIMARY KEY,
+    report_id VARCHAR(50) NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    status VARCHAR(30) NOT NULL,
+    changed_by VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    note TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Notifications (Pemberitahuan Akun Pengguna)
+CREATE TABLE IF NOT EXISTS notifications (
+    id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    report_id VARCHAR(50) REFERENCES reports(id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. Student Mood Checks (Pencatatan Mood & Kesehatan Mental Siswa Harian)
+CREATE TABLE IF NOT EXISTS student_mood_checks (
+    id VARCHAR(50) PRIMARY KEY,
+    student_id VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    student_user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    student_name VARCHAR(150) NOT NULL,
+    student_nis VARCHAR(50) NOT NULL,
+    student_avatar TEXT,
+    class_id VARCHAR(50),
+    class_name VARCHAR(100),
+    date VARCHAR(20) NOT NULL,
+    time VARCHAR(20) NOT NULL,
+    mood VARCHAR(30) NOT NULL,
+    mood_score INT DEFAULT 3,
+    emotions JSONB DEFAULT '[]'::jsonb,
+    trigger TEXT,
+    note TEXT,
+    needs_counseling BOOLEAN DEFAULT FALSE,
+    status VARCHAR(30) DEFAULT 'belum_ditinjau',
+    reviewed_by_teacher_id VARCHAR(50),
+    reviewed_by_teacher_name VARCHAR(150),
+    reviewed_at TIMESTAMP WITH TIME ZONE,
+    teacher_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 11. Announcements (Pengumuman & Edukasi BK Sekolah)
+CREATE TABLE IF NOT EXISTS announcements (
+    id VARCHAR(50) PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    author_id VARCHAR(50),
+    author_user_id VARCHAR(50),
+    author_name VARCHAR(150) NOT NULL,
+    author_role VARCHAR(50) NOT NULL,
+    author_avatar TEXT,
+    target_grade VARCHAR(20) DEFAULT 'all',
+    target_class_id VARCHAR(50),
+    target_class_name VARCHAR(100),
+    category VARCHAR(100),
+    attachments JSONB DEFAULT '[]'::jsonb,
+    link_url TEXT,
+    link_title VARCHAR(255),
+    image_url TEXT,
+    video_url TEXT,
+    read_by JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 12. System Settings (Pengaturan Informasi Sekolah & Kontak Admin)
+CREATE TABLE IF NOT EXISTS system_settings (
+    id VARCHAR(50) PRIMARY KEY,
+    school_name VARCHAR(200) NOT NULL,
+    school_tagline TEXT,
+    reset_password_email VARCHAR(150),
+    contact_email VARCHAR(150),
+    contact_phone VARCHAR(50),
+    address TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indeks untuk Performa Query
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_students_nis ON students(nis);
+CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id);
+CREATE INDEX IF NOT EXISTS idx_teachers_nip ON teachers(nip);
+CREATE INDEX IF NOT EXISTS idx_teachers_assigned_classes ON teachers USING gin (assigned_class_ids);
+CREATE INDEX IF NOT EXISTS idx_classes_bk_teacher ON classes(bk_teacher_id);
+CREATE INDEX IF NOT EXISTS idx_classes_homeroom_teacher ON classes(homeroom_teacher_id);
+CREATE INDEX IF NOT EXISTS idx_reports_student ON reports(student_id);
+CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+CREATE INDEX IF NOT EXISTS idx_reports_assigned ON reports(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_messages_report ON messages(report_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_status_history_report ON report_status_history(report_id);
+CREATE INDEX IF NOT EXISTS idx_mood_student ON student_mood_checks(student_id);
+CREATE INDEX IF NOT EXISTS idx_mood_date ON student_mood_checks(date);
+CREATE INDEX IF NOT EXISTS idx_announcements_target ON announcements(target_grade);

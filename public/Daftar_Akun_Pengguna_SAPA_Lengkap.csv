@@ -1,0 +1,124 @@
+No,Kategori Akun,Nama Lengkap,Username / ID Login,Kata Sandi (Password),Email,NIS / NIP,Kelas / Rombel,No. Telepon / WA,Status Kata Sandi
+1,Administrator,Administrator SAPA,admin@smk.sch.id (atau: admin),admin123,admin@smk.sch.id,-,-,081234567800,Telah Diubah Mandiri
+2,Administrator,Admin SAPA Sistem,admin@sapa.sch.id (atau: admin),admin123,admin@sapa.sch.id,-,-,081234567801,Telah Diubah Mandiri
+3,Guru BK,"Dra. Hj. Sri Wahyuni, M.Psi, Kons.",sri.wahyuni@smk.sch.id,guru123,sri.wahyuni@smk.sch.id,197503151999032001,Semua Kelas (BK Sekolah),081234567811,Telah Diubah Mandiri
+4,Guru BK,"Ahmad Fauzi, S.Pd., Kons.",ahmad.fauzi@smk.sch.id,guru123,ahmad.fauzi@smk.sch.id,198008122005011004,Semua Kelas (BK Sekolah),081234567812,Telah Diubah Mandiri
+5,Guru BK,"Ratna Kusuma Dewi, S.Psi.",ratna.kusuma@smk.sch.id,guru123,ratna.kusuma@smk.sch.id,198411202008012006,Semua Kelas (BK Sekolah),081234567813,Telah Diubah Mandiri
+6,Guru BK,"Drs. Bambang Sudarmono, M.Pd.",bambang.sudarmono@smk.sch.id,guru123,bambang.sudarmono@smk.sch.id,197104251997031002,Semua Kelas (BK Sekolah),081234567814,Telah Diubah Mandiri
+7,Guru BK,"Siti Nurhaliza, S.Pd., Kons.",siti.nurhaliza@smk.sch.id,guru123,siti.nurhaliza@smk.sch.id,198807142011012005,Semua Kelas (BK Sekolah),081234567815,Telah Diubah Mandiri
+8,Guru BK,"Eko Prasetyo, S.Psi.",eko.prasetyo@smk.sch.id,guru123,eko.prasetyo@smk.sch.id,198602282010011008,Semua Kelas (BK Sekolah),081234567816,Telah Diubah Mandiri
+9,Guru BK,"Nurul Hidayati, S.Pd., M.Si.",nurul.hidayati@smk.sch.id,guru123,nurul.hidayati@smk.sch.id,198209052006042007,Semua Kelas (BK Sekolah),081234567817,Telah Diubah Mandiri
+10,Guru BK,"Dedi Kurniawan, S.Pd., Kons.",dedi.kurniawan@smk.sch.id,guru123,dedi.kurniawan@smk.sch.id,198701192014021003,Semua Kelas (BK Sekolah),081234567818,Telah Diubah Mandiri
+11,Guru BK,"Tri Wahyuningsih, S.Psi.",tri.wahyuningsih@smk.sch.id,guru123,tri.wahyuningsih@smk.sch.id,199003102015032002,Semua Kelas (BK Sekolah),081234567819,Telah Diubah Mandiri
+12,Guru BK,"Agus Setiawan, S.Pd., Kons.",agus.setiawan@smk.sch.id,guru123,agus.setiawan@smk.sch.id,199205122019031006,Semua Kelas (BK Sekolah),081234567820,Telah Diubah Mandiri
+13,Wali Kelas,"Budi Hartono, S.T., M.Kom.",budi.hartono@smk.sch.id,guru123,budi.hartono@smk.sch.id,198102142006041002,X TKJ,081234567821,Telah Diubah Mandiri
+14,Wali Kelas,"Ir. Hendra Saputra, S.Pd.",hendra.saputra@smk.sch.id,guru123,hendra.saputra@smk.sch.id,197906182005011003,X TKP,081234567822,Telah Diubah Mandiri
+15,Wali Kelas,"Drs. H. Mulyadi, M.Pd.",mulyadi.walikelas@smk.sch.id,guru123,mulyadi.walikelas@smk.sch.id,197305101998021001,X TBKR,081234567823,Telah Diubah Mandiri
+16,Siswa,Ahmad Rizky Pratama,24250101,siswa0101,ahmad.rizky.pratama@siswa.belajar.id,24250101,X TKJ,081234560101,Sandi Default
+17,Siswa,Aldiansyah Putra,24250102,siswa0102,aldiansyah.putra@siswa.belajar.id,24250102,X TKJ,081234560102,Sandi Default
+18,Siswa,Amanda Putri Kirana,24250103,siswa0103,amanda.putri.kirana@siswa.belajar.id,24250103,X TKJ,081234560103,Sandi Default
+19,Siswa,Anisa Rahmawati,24250104,siswa0104,anisa.rahmawati@siswa.belajar.id,24250104,X TKJ,081234560104,Sandi Default
+20,Siswa,Bagas Arya Wicaksana,24250105,siswa0105,bagas.arya.wicaksana@siswa.belajar.id,24250105,X TKJ,081234560105,Sandi Default
+21,Siswa,Bayu Nugroho,24250106,siswa0106,bayu.nugroho@siswa.belajar.id,24250106,X TKJ,081234560106,Sandi Default
+22,Siswa,Cantika Dwi Safitri,24250107,siswa0107,cantika.dwi.safitri@siswa.belajar.id,24250107,X TKJ,081234560107,Sandi Default
+23,Siswa,Danendra Rasyid,24250108,siswa0108,danendra.rasyid@siswa.belajar.id,24250108,X TKJ,081234560108,Sandi Default
+24,Siswa,Desta Pratama,24250109,siswa0109,desta.pratama@siswa.belajar.id,24250109,X TKJ,081234560109,Sandi Default
+25,Siswa,Dimas Anggoro,24250110,siswa0110,dimas.anggoro@siswa.belajar.id,24250110,X TKJ,081234560110,Sandi Default
+26,Siswa,Dinda Ayu Lestari,24250111,siswa0111,dinda.ayu.lestari@siswa.belajar.id,24250111,X TKJ,081234560111,Sandi Default
+27,Siswa,Fadil Muhammad,24250112,siswa0112,fadil.muhammad@siswa.belajar.id,24250112,X TKJ,081234560112,Sandi Default
+28,Siswa,Farhan Alfarizi,24250113,siswa0113,farhan.alfarizi@siswa.belajar.id,24250113,X TKJ,081234560113,Sandi Default
+29,Siswa,Fathir Rahman,24250114,siswa0114,fathir.rahman@siswa.belajar.id,24250114,X TKJ,081234560114,Sandi Default
+30,Siswa,Galih Saputra,24250115,siswa0115,galih.saputra@siswa.belajar.id,24250115,X TKJ,081234560115,Sandi Default
+31,Siswa,Gilang Ramadhan,24250116,siswa0116,gilang.ramadhan@siswa.belajar.id,24250116,X TKJ,081234560116,Sandi Default
+32,Siswa,Hafiz Syahputra,24250117,siswa0117,hafiz.syahputra@siswa.belajar.id,24250117,X TKJ,081234560117,Sandi Default
+33,Siswa,Ilham Nur Cahyo,24250118,siswa0118,ilham.nur.cahyo@siswa.belajar.id,24250118,X TKJ,081234560118,Sandi Default
+34,Siswa,Indah Permatasari,24250119,siswa0119,indah.permatasari@siswa.belajar.id,24250119,X TKJ,081234560119,Sandi Default
+35,Siswa,Irfan Hakim,24250120,siswa0120,irfan.hakim@siswa.belajar.id,24250120,X TKJ,081234560120,Sandi Default
+36,Siswa,Kevin Julian,24250121,siswa0121,kevin.julian@siswa.belajar.id,24250121,X TKJ,081234560121,Sandi Default
+37,Siswa,Laila Safira,24250122,siswa0122,laila.safira@siswa.belajar.id,24250122,X TKJ,081234560122,Sandi Default
+38,Siswa,Lucky Wardhana,24250123,siswa0123,lucky.wardhana@siswa.belajar.id,24250123,X TKJ,081234560123,Sandi Default
+39,Siswa,M. Aditya Nugraha,24250124,siswa0124,m.aditya.nugraha@siswa.belajar.id,24250124,X TKJ,081234560124,Sandi Default
+40,Siswa,M. Fikri Haikal,24250125,siswa0125,m.fikri.haikal@siswa.belajar.id,24250125,X TKJ,081234560125,Sandi Default
+41,Siswa,M. Zidan Maulana,24250126,siswa0126,m.zidan.maulana@siswa.belajar.id,24250126,X TKJ,081234560126,Sandi Default
+42,Siswa,Nabila Salsabila,24250127,siswa0127,nabila.salsabila@siswa.belajar.id,24250127,X TKJ,081234560127,Sandi Default
+43,Siswa,Nadia Fitriani,24250128,siswa0128,nadia.fitriani@siswa.belajar.id,24250128,X TKJ,081234560128,Sandi Default
+44,Siswa,Noval Ardiansyah,24250129,siswa0129,noval.ardiansyah@siswa.belajar.id,24250129,X TKJ,081234560129,Sandi Default
+45,Siswa,Panji Gumilang,24250130,siswa0130,panji.gumilang@siswa.belajar.id,24250130,X TKJ,081234560130,Sandi Default
+46,Siswa,Raditya Pratama,24250131,siswa0131,raditya.pratama@siswa.belajar.id,24250131,X TKJ,081234560131,Sandi Default
+47,Siswa,Raihan Surya,24250132,siswa0132,raihan.surya@siswa.belajar.id,24250132,X TKJ,081234560132,Sandi Default
+48,Siswa,Rendy Ardiansyah,24250133,siswa0133,rendy.ardiansyah@siswa.belajar.id,24250133,X TKJ,081234560133,Sandi Default
+49,Siswa,Rian Hidayat,24250134,siswa0134,rian.hidayat@siswa.belajar.id,24250134,X TKJ,081234560134,Sandi Default
+50,Siswa,Rizki Ramadhani,24250135,siswa0135,rizki.ramadhani@siswa.belajar.id,24250135,X TKJ,081234560135,Sandi Default
+51,Siswa,Yoga Pangestu,24250136,siswa0136,yoga.pangestu@siswa.belajar.id,24250136,X TKJ,081234560136,Sandi Default
+52,Siswa,Adam Malik,24250201,siswa0201,adam.malik@siswa.belajar.id,24250201,X TKP,081234560201,Sandi Default
+53,Siswa,Agung Prasetyo,24250202,siswa0202,agung.prasetyo@siswa.belajar.id,24250202,X TKP,081234560202,Sandi Default
+54,Siswa,Aisyah Putri Handayani,24250203,siswa0203,aisyah.putri.handayani@siswa.belajar.id,24250203,X TKP,081234560203,Sandi Default
+55,Siswa,Alif Bahtiar,24250204,siswa0204,alif.bahtiar@siswa.belajar.id,24250204,X TKP,081234560204,Sandi Default
+56,Siswa,Andika Firmansyah,24250205,siswa0205,andika.firmansyah@siswa.belajar.id,24250205,X TKP,081234560205,Sandi Default
+57,Siswa,Angga Saputra,24250206,siswa0206,angga.saputra@siswa.belajar.id,24250206,X TKP,081234560206,Sandi Default
+58,Siswa,Arya Bima Kusuma,24250207,siswa0207,arya.bima.kusuma@siswa.belajar.id,24250207,X TKP,081234560207,Sandi Default
+59,Siswa,Bagus Santoso,24250208,siswa0208,bagus.santoso@siswa.belajar.id,24250208,X TKP,081234560208,Sandi Default
+60,Siswa,Bella Safira,24250209,siswa0209,bella.safira@siswa.belajar.id,24250209,X TKP,081234560209,Sandi Default
+61,Siswa,Bima Sakti,24250210,siswa0210,bima.sakti@siswa.belajar.id,24250210,X TKP,081234560210,Sandi Default
+62,Siswa,Candra Gunawan,24250211,siswa0211,candra.gunawan@siswa.belajar.id,24250211,X TKP,081234560211,Sandi Default
+63,Siswa,Dani Setiawan,24250212,siswa0212,dani.setiawan@siswa.belajar.id,24250212,X TKP,081234560212,Sandi Default
+64,Siswa,Deden Kurnia,24250213,siswa0213,deden.kurnia@siswa.belajar.id,24250213,X TKP,081234560213,Sandi Default
+65,Siswa,Doni Irawan,24250214,siswa0214,doni.irawan@siswa.belajar.id,24250214,X TKP,081234560214,Sandi Default
+66,Siswa,Eka Wahyudi,24250215,siswa0215,eka.wahyudi@siswa.belajar.id,24250215,X TKP,081234560215,Sandi Default
+67,Siswa,Fajar Sidik,24250216,siswa0216,fajar.sidik@siswa.belajar.id,24250216,X TKP,081234560216,Sandi Default
+68,Siswa,Fauzan Adhim,24250217,siswa0217,fauzan.adhim@siswa.belajar.id,24250217,X TKP,081234560217,Sandi Default
+69,Siswa,Firman Utina,24250218,siswa0218,firman.utina@siswa.belajar.id,24250218,X TKP,081234560218,Sandi Default
+70,Siswa,Guntur Triwibowo,24250219,siswa0219,guntur.triwibowo@siswa.belajar.id,24250219,X TKP,081234560219,Sandi Default
+71,Siswa,Haryanto,24250220,siswa0220,haryanto@siswa.belajar.id,24250220,X TKP,081234560220,Sandi Default
+72,Siswa,Hendri Gunawan,24250221,siswa0221,hendri.gunawan@siswa.belajar.id,24250221,X TKP,081234560221,Sandi Default
+73,Siswa,Ihsan Kamil,24250222,siswa0222,ihsan.kamil@siswa.belajar.id,24250222,X TKP,081234560222,Sandi Default
+74,Siswa,Indra Lesmana,24250223,siswa0223,indra.lesmana@siswa.belajar.id,24250223,X TKP,081234560223,Sandi Default
+75,Siswa,Joko Supriyanto,24250224,siswa0224,joko.supriyanto@siswa.belajar.id,24250224,X TKP,081234560224,Sandi Default
+76,Siswa,Maulana Malik Ibrahim,24250225,siswa0225,maulana.malik.ibrahim@siswa.belajar.id,24250225,X TKP,081234560225,Sandi Default
+77,Siswa,Muhammad Iqbal,24250226,siswa0226,muhammad.iqbal@siswa.belajar.id,24250226,X TKP,081234560226,Sandi Default
+78,Siswa,Pandu Dewanata,24250227,siswa0227,pandu.dewanata@siswa.belajar.id,24250227,X TKP,081234560227,Sandi Default
+79,Siswa,Putra Pratama,24250228,siswa0228,putra.pratama@siswa.belajar.id,24250228,X TKP,081234560228,Sandi Default
+80,Siswa,Rahmat Hidayat,24250229,siswa0229,rahmat.hidayat@siswa.belajar.id,24250229,X TKP,081234560229,Sandi Default
+81,Siswa,Restu Fauzi,24250230,siswa0230,restu.fauzi@siswa.belajar.id,24250230,X TKP,081234560230,Sandi Default
+82,Siswa,Rio Febrian,24250231,siswa0231,rio.febrian@siswa.belajar.id,24250231,X TKP,081234560231,Sandi Default
+83,Siswa,Satria Yudha,24250232,siswa0232,satria.yudha@siswa.belajar.id,24250232,X TKP,081234560232,Sandi Default
+84,Siswa,Tegar Prakoso,24250233,siswa0233,tegar.prakoso@siswa.belajar.id,24250233,X TKP,081234560233,Sandi Default
+85,Siswa,Wahyu Ramadhan,24250234,siswa0234,wahyu.ramadhan@siswa.belajar.id,24250234,X TKP,081234560234,Sandi Default
+86,Siswa,Wildan Hakim,24250235,siswa0235,wildan.hakim@siswa.belajar.id,24250235,X TKP,081234560235,Sandi Default
+87,Siswa,Yusuf Maulana,24250236,siswa0236,yusuf.maulana@siswa.belajar.id,24250236,X TKP,081234560236,Sandi Default
+88,Siswa,Adi Nugroho,24250301,siswa0301,adi.nugroho@siswa.belajar.id,24250301,X TBKR,081234560301,Sandi Default
+89,Siswa,Aditya Pratama,24250302,siswa0302,aditya.pratama@siswa.belajar.id,24250302,X TBKR,081234560302,Sandi Default
+90,Siswa,Aldi Taherian,24250303,siswa0303,aldi.taherian@siswa.belajar.id,24250303,X TBKR,081234560303,Sandi Default
+91,Siswa,Andre Setiawan,24250304,siswa0304,andre.setiawan@siswa.belajar.id,24250304,X TBKR,081234560304,Sandi Default
+92,Siswa,Anton Wijaya,24250305,siswa0305,anton.wijaya@siswa.belajar.id,24250305,X TBKR,081234560305,Sandi Default
+93,Siswa,Ari Wibowo,24250306,siswa0306,ari.wibowo@siswa.belajar.id,24250306,X TBKR,081234560306,Sandi Default
+94,Siswa,Asep Saepudin,24250307,siswa0307,asep.saepudin@siswa.belajar.id,24250307,X TBKR,081234560307,Sandi Default
+95,Siswa,Bobby Kurniawan,24250308,siswa0308,bobby.kurniawan@siswa.belajar.id,24250308,X TBKR,081234560308,Sandi Default
+96,Siswa,Chairul Anam,24250309,siswa0309,chairul.anam@siswa.belajar.id,24250309,X TBKR,081234560309,Sandi Default
+97,Siswa,Danu Wijaya,24250310,siswa0310,danu.wijaya@siswa.belajar.id,24250310,X TBKR,081234560310,Sandi Default
+98,Siswa,Dede Rusmana,24250311,siswa0311,dede.rusmana@siswa.belajar.id,24250311,X TBKR,081234560311,Sandi Default
+99,Siswa,Deni Septian,24250312,siswa0312,deni.septian@siswa.belajar.id,24250312,X TBKR,081234560312,Sandi Default
+100,Siswa,Edo Febriansyah,24250313,siswa0313,edo.febriansyah@siswa.belajar.id,24250313,X TBKR,081234560313,Sandi Default
+101,Siswa,Erik Estrada,24250314,siswa0314,erik.estrada@siswa.belajar.id,24250314,X TBKR,081234560314,Sandi Default
+102,Siswa,Ferdiansyah,24250315,siswa0315,ferdiansyah@siswa.belajar.id,24250315,X TBKR,081234560315,Sandi Default
+103,Siswa,Fikri Haikal,24250316,siswa0316,fikri.haikal@siswa.belajar.id,24250316,X TBKR,081234560316,Sandi Default
+104,Siswa,Gani Muhammad,24250317,siswa0317,gani.muhammad@siswa.belajar.id,24250317,X TBKR,081234560317,Sandi Default
+105,Siswa,Hadi Prabowo,24250318,siswa0318,hadi.prabowo@siswa.belajar.id,24250318,X TBKR,081234560318,Sandi Default
+106,Siswa,Heru Susanto,24250319,siswa0319,heru.susanto@siswa.belajar.id,24250319,X TBKR,081234560319,Sandi Default
+107,Siswa,Ian Kasela,24250320,siswa0320,ian.kasela@siswa.belajar.id,24250320,X TBKR,081234560320,Sandi Default
+108,Siswa,Jafar Shiddiq,24250321,siswa0321,jafar.shiddiq@siswa.belajar.id,24250321,X TBKR,081234560321,Sandi Default
+109,Siswa,Krisna Mukti,24250322,siswa0322,krisna.mukti@siswa.belajar.id,24250322,X TBKR,081234560322,Sandi Default
+110,Siswa,Lukman Hakim,24250323,siswa0323,lukman.hakim@siswa.belajar.id,24250323,X TBKR,081234560323,Sandi Default
+111,Siswa,M. Arifin,24250324,siswa0324,m.arifin@siswa.belajar.id,24250324,X TBKR,081234560324,Sandi Default
+112,Siswa,M. Ridwan,24250325,siswa0325,m.ridwan@siswa.belajar.id,24250325,X TBKR,081234560325,Sandi Default
+113,Siswa,Nanda Saputra,24250326,siswa0326,nanda.saputra@siswa.belajar.id,24250326,X TBKR,081234560326,Sandi Default
+114,Siswa,Oki Setiawan,24250327,siswa0327,oki.setiawan@siswa.belajar.id,24250327,X TBKR,081234560327,Sandi Default
+115,Siswa,Pratama Arhan,24250328,siswa0328,pratama.arhan@siswa.belajar.id,24250328,X TBKR,081234560328,Sandi Default
+116,Siswa,Rendi Juliansyah,24250329,siswa0329,rendi.juliansyah@siswa.belajar.id,24250329,X TBKR,081234560329,Sandi Default
+117,Siswa,Rizal Ramli,24250330,siswa0330,rizal.ramli@siswa.belajar.id,24250330,X TBKR,081234560330,Sandi Default
+118,Siswa,Sandi Kurnia,24250331,siswa0331,sandi.kurnia@siswa.belajar.id,24250331,X TBKR,081234560331,Sandi Default
+119,Siswa,Surya Kencana,24250332,siswa0332,surya.kencana@siswa.belajar.id,24250332,X TBKR,081234560332,Sandi Default
+120,Siswa,Tommy Soeharto,24250333,siswa0333,tommy.soeharto@siswa.belajar.id,24250333,X TBKR,081234560333,Sandi Default
+121,Siswa,Vicki Prasetyo,24250334,siswa0334,vicki.prasetyo@siswa.belajar.id,24250334,X TBKR,081234560334,Sandi Default
+122,Siswa,Wawan Hermawan,24250335,siswa0335,wawan.hermawan@siswa.belajar.id,24250335,X TBKR,081234560335,Sandi Default
+123,Siswa,Zulkifli Hasan,24250336,siswa0336,zulkifli.hasan@siswa.belajar.id,24250336,X TBKR,081234560336,Sandi Default
