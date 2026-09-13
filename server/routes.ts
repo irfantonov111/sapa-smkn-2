@@ -1,4 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { verifyPassword, hashPassword } from '../src/utils/crypto';
 import {
   getUsers,
@@ -8,6 +10,9 @@ import {
   getStudentByUserId,
   getTeacherByUserId,
   getClasses,
+  getStudents,
+  getTeachers,
+  getFullDatabaseState,
   getCategories,
   createCategory,
   getReports,
@@ -21,21 +26,89 @@ import {
   getDashboardStats,
   resetDatabase,
   getDatabaseStatus,
-  getBkTeachers
+  getBkTeachers,
+  ensureDbInitialized,
+  getPool
 } from './db';
 
 export const apiRouter = Router();
 
-// Health check & DB connection status
-apiRouter.get('/health', (req: Request, res: Response) => {
-  const dbStatus = getDatabaseStatus();
-  res.json({
-    status: 'ok',
-    app: 'ADVOCARE Counseling & Reporting Backend',
-    version: '1.0.0',
-    timestamp: new Date().toISOString(),
-    database: dbStatus
-  });
+// Ensure DB is initialized before executing any request
+apiRouter.use(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await ensureDbInitialized();
+  } catch (err) {
+    console.warn('[ADVOCARE ROUTER] DB ensure init warning:', err);
+  }
+  next();
+});
+
+// Health check & DB connection status with live table row counts
+apiRouter.get('/health', async (req: Request, res: Response) => {
+  try {
+    const dbStatus = await getDatabaseStatus();
+    res.json({
+      status: 'ok',
+      app: 'SAPA Counseling & Reporting Backend',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      database: dbStatus
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Full state synchronization for frontend client
+apiRouter.get('/sync', async (req: Request, res: Response) => {
+  try {
+    const state = await getFullDatabaseState();
+    const dbStatus = await getDatabaseStatus();
+    res.json({
+      success: true,
+      data: state,
+      database: dbStatus
+    });
+  } catch (err: any) {
+    console.error('Error fetching full database state:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Seed Supabase with master dataset directly from server (33 Classes, 43 Teachers, 1,122 Students)
+apiRouter.post('/admin/seed-supabase', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    if (!pool) {
+      return res.status(400).json({
+        success: false,
+        error: 'Koneksi ke Supabase PostgreSQL tidak aktif. Pastikan variabel lingkungan DATABASE_URL sudah diatur di Vercel.'
+      });
+    }
+
+    const seedPath = path.join(process.cwd(), 'database', 'seed.sql');
+    if (!fs.existsSync(seedPath)) {
+      return res.status(404).json({ success: false, error: 'Berkas database/seed.sql tidak ditemukan di server.' });
+    }
+
+    const sql = fs.readFileSync(seedPath, 'utf8');
+    const client = await pool.connect();
+    try {
+      await client.query(sql);
+    } finally {
+      client.release();
+    }
+
+    const dbStatus = await getDatabaseStatus();
+    res.json({
+      success: true,
+      message: 'Berhasil menginisialisasi 33 Rombel Kelas, 43 Guru, dan 1.122 Siswa ke database Supabase!',
+      database: dbStatus
+    });
+  } catch (err: any) {
+    console.error('Error executing seed to Supabase:', err);
+    res.status(500).json({ success: false, error: err.message || 'Gagal menjalankan seed SQL ke Supabase.' });
+  }
 });
 
 // Authentication endpoints
@@ -167,6 +240,26 @@ apiRouter.get('/classes', async (req: Request, res: Response) => {
   try {
     const classes = await getClasses();
     res.json(classes);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Students
+apiRouter.get('/students', async (req: Request, res: Response) => {
+  try {
+    const students = await getStudents();
+    res.json(students);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Teachers
+apiRouter.get('/teachers', async (req: Request, res: Response) => {
+  try {
+    const teachers = await getTeachers();
+    res.json(teachers);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

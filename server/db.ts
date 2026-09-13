@@ -299,12 +299,60 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
   }
 }
 
-export function getDatabaseStatus() {
+let dbInitPromise: Promise<{ isPostgres: boolean; error?: string }> | null = null;
+
+export async function ensureDbInitialized(): Promise<{ isPostgres: boolean; error?: string }> {
+  if (isPostgresConnected) return { isPostgres: true };
+  if (!dbInitPromise) {
+    dbInitPromise = initDatabase().catch(err => {
+      console.warn('[ADVOCARE DB] Error initializing DB:', err);
+      return { isPostgres: false, error: err?.message };
+    });
+  }
+  return await dbInitPromise;
+}
+
+export function getPool() {
+  return pool;
+}
+
+export async function getDatabaseStatus() {
+  let counts = { users: 0, classes: 0, teachers: 0, students: 0, reports: 0 };
+  if (isPostgresConnected && pool) {
+    try {
+      const [uRes, cRes, tRes, sRes, rRes] = await Promise.all([
+        pool.query('SELECT COUNT(*) FROM users'),
+        pool.query('SELECT COUNT(*) FROM classes'),
+        pool.query('SELECT COUNT(*) FROM teachers'),
+        pool.query('SELECT COUNT(*) FROM students'),
+        pool.query('SELECT COUNT(*) FROM reports')
+      ]);
+      counts = {
+        users: parseInt(uRes.rows[0]?.count || '0', 10),
+        classes: parseInt(cRes.rows[0]?.count || '0', 10),
+        teachers: parseInt(tRes.rows[0]?.count || '0', 10),
+        students: parseInt(sRes.rows[0]?.count || '0', 10),
+        reports: parseInt(rRes.rows[0]?.count || '0', 10)
+      };
+    } catch (e: any) {
+      console.warn('[ADVOCARE DB] Failed to query table counts from Postgres:', e.message);
+    }
+  } else {
+    counts = {
+      users: memoryStore.users.length,
+      classes: memoryStore.classes.length,
+      teachers: memoryStore.teachers.length,
+      students: memoryStore.students.length,
+      reports: memoryStore.reports.length
+    };
+  }
+
   return {
-    engine: isPostgresConnected ? 'PostgreSQL' : 'In-Memory Relational Engine',
+    engine: isPostgresConnected ? 'PostgreSQL (Supabase)' : 'In-Memory Relational Engine',
     connected: true,
     isPostgres: isPostgresConnected,
     hasDatabaseUrl: Boolean(connectionString),
+    counts
   };
 }
 
@@ -437,6 +485,78 @@ export async function getClasses(): Promise<SchoolClass[]> {
     return res.rows;
   }
   return memoryStore.classes;
+}
+
+export async function getStudents(): Promise<Student[]> {
+  if (isPostgresConnected && pool) {
+    const res = await pool.query('SELECT * FROM students ORDER BY nis ASC');
+    return res.rows;
+  }
+  return memoryStore.students;
+}
+
+export async function getTeachers(): Promise<Teacher[]> {
+  if (isPostgresConnected && pool) {
+    const res = await pool.query('SELECT * FROM teachers ORDER BY id ASC');
+    return res.rows.map(r => ({
+      ...r,
+      assigned_class_ids: Array.isArray(r.assigned_class_ids)
+        ? r.assigned_class_ids
+        : (typeof r.assigned_class_ids === 'string' ? JSON.parse(r.assigned_class_ids) : [])
+    }));
+  }
+  return memoryStore.teachers;
+}
+
+export async function getAnnouncements(): Promise<any[]> {
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query('SELECT * FROM announcements ORDER BY created_at DESC');
+      return res.rows.map(r => ({
+        ...r,
+        attachments: typeof r.attachments === 'string' ? JSON.parse(r.attachments) : (r.attachments || [])
+      }));
+    } catch {
+      return [];
+    }
+  }
+  return memoryStore.announcements;
+}
+
+export async function getMoodChecks(): Promise<any[]> {
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query('SELECT * FROM student_mood_checks ORDER BY created_at DESC');
+      return res.rows;
+    } catch {
+      return [];
+    }
+  }
+  return memoryStore.mood_checks;
+}
+
+export async function getFullDatabaseState() {
+  const [users, students, teachers, classes, categories, reports, announcements, moodChecks] = await Promise.all([
+    getUsers(),
+    getStudents(),
+    getTeachers(),
+    getClasses(),
+    getCategories(),
+    getReports(),
+    getAnnouncements(),
+    getMoodChecks()
+  ]);
+  return {
+    users,
+    students,
+    teachers,
+    classes,
+    categories,
+    reports,
+    announcements,
+    mood_checks: moodChecks,
+    isPostgres: isPostgresConnected
+  };
 }
 
 export async function getCategories(): Promise<Category[]> {

@@ -80,6 +80,11 @@ class DatabaseService {
           this.reloadFromStorage();
         }
       });
+
+      // Background auto-sync from server API (PostgreSQL / Supabase)
+      setTimeout(() => {
+        this.syncFromBackend().catch(() => {});
+      }, 500);
     }
   }
 
@@ -305,7 +310,13 @@ class DatabaseService {
   }
 
   // Check live backend and database status
-  public async checkServerHealth(): Promise<{ status: string; engine: string; isPostgres: boolean }> {
+  public async checkServerHealth(): Promise<{
+    status: string;
+    engine: string;
+    isPostgres: boolean;
+    hasDatabaseUrl: boolean;
+    counts?: { users: number; classes: number; teachers: number; students: number; reports: number };
+  }> {
     try {
       const res = await fetch('/api/health');
       if (res.ok) {
@@ -313,7 +324,9 @@ class DatabaseService {
         return {
           status: 'online',
           engine: data.database?.engine || 'Express Server',
-          isPostgres: Boolean(data.database?.isPostgres)
+          isPostgres: Boolean(data.database?.isPostgres),
+          hasDatabaseUrl: Boolean(data.database?.hasDatabaseUrl),
+          counts: data.database?.counts
         };
       }
     } catch {
@@ -322,8 +335,109 @@ class DatabaseService {
     return {
       status: 'client_mode',
       engine: 'In-Memory Relational Engine',
-      isPostgres: false
+      isPostgres: false,
+      hasDatabaseUrl: false,
+      counts: {
+        users: this.state.users.length,
+        classes: this.state.classes.length,
+        teachers: this.state.teachers.length,
+        students: this.state.students.length,
+        reports: this.state.reports.length
+      }
     };
+  }
+
+  /**
+   * Pull and sync full state from Supabase / Backend API
+   */
+  public async syncFromBackend(): Promise<{
+    success: boolean;
+    isPostgres: boolean;
+    message?: string;
+    counts?: { users: number; classes: number; teachers: number; students: number; reports: number };
+  }> {
+    try {
+      const res = await fetch('/api/sync');
+      if (!res.ok) {
+        return { success: false, isPostgres: false, message: `Server error (${res.status})` };
+      }
+      const json = await res.json();
+      if (json.success && json.data) {
+        const d = json.data;
+        let updated = false;
+        if (Array.isArray(d.classes) && d.classes.length > 0) {
+          this.state.classes = d.classes;
+          updated = true;
+        }
+        if (Array.isArray(d.users) && d.users.length > 0) {
+          this.state.users = d.users;
+          updated = true;
+        }
+        if (Array.isArray(d.students) && d.students.length > 0) {
+          this.state.students = d.students;
+          updated = true;
+        }
+        if (Array.isArray(d.teachers) && d.teachers.length > 0) {
+          this.state.teachers = d.teachers;
+          updated = true;
+        }
+        if (Array.isArray(d.categories) && d.categories.length > 0) {
+          this.state.categories = d.categories;
+          updated = true;
+        }
+        if (Array.isArray(d.reports) && d.reports.length > 0) {
+          this.state.reports = d.reports;
+          updated = true;
+        }
+        if (Array.isArray(d.announcements) && d.announcements.length > 0) {
+          this.state.announcements = d.announcements;
+          updated = true;
+        }
+
+        if (updated) {
+          this.saveToStorage();
+          this.notifyListeners();
+        }
+
+        return {
+          success: true,
+          isPostgres: Boolean(json.database?.isPostgres),
+          message: 'Sinkronisasi berhasil dengan database server.',
+          counts: json.database?.counts || {
+            users: this.state.users.length,
+            classes: this.state.classes.length,
+            teachers: this.state.teachers.length,
+            students: this.state.students.length,
+            reports: this.state.reports.length
+          }
+        };
+      }
+    } catch (err: any) {
+      console.warn('Sync from backend failed:', err);
+      return { success: false, isPostgres: false, message: err?.message || 'Gagal terhubung ke API' };
+    }
+    return { success: false, isPostgres: false, message: 'Tidak ada data dari server' };
+  }
+
+  /**
+   * Directly seed Supabase database with master dataset (33 Classes, 43 Teachers, 1,122 Students)
+   */
+  public async seedSupabase(): Promise<{ success: boolean; message: string; database?: any }> {
+    try {
+      const res = await fetch('/api/admin/seed-supabase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        // Automatically sync fresh data into local state
+        await this.syncFromBackend();
+        return { success: true, message: data.message, database: data.database };
+      }
+      return { success: false, message: data.error || 'Gagal melakukan seeding ke Supabase.' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Koneksi ke endpoint /api/admin/seed-supabase gagal.' };
+    }
   }
 
   public resetToDefaults(): void {
