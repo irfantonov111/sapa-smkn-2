@@ -34,8 +34,13 @@ import { decryptNip, hashPassword } from '../src/utils/crypto';
 
 const { Pool } = pg;
 
-// Check if PostgreSQL DATABASE_URL is configured
-const connectionString = process.env.DATABASE_URL;
+// Helper to get sanitized DATABASE_URL
+function getConnectionString(): string | undefined {
+  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SUPABASE_DATABASE_URL;
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
 
 let pool: pg.Pool | null = null;
 let isPostgresConnected = false;
@@ -70,20 +75,21 @@ const memoryStore: MemoryStore = {
 };
 
 export async function initDatabase(): Promise<{ isPostgres: boolean; error?: string }> {
-  if (!connectionString) {
+  const connStr = getConnectionString();
+  if (!connStr) {
     console.log('[ADVOCARE DB] No DATABASE_URL found. Running with high-performance In-Memory relational engine.');
     return { isPostgres: false };
   }
 
   try {
     pool = new Pool({
-      connectionString,
-      ssl: process.env.NODE_ENV === 'production' || connectionString.includes('supabase') || connectionString.includes('neon')
+      connectionString: connStr,
+      ssl: process.env.NODE_ENV === 'production' || connStr.includes('supabase') || connStr.includes('neon')
         ? { rejectUnauthorized: false }
         : false,
-      max: 5,
+      max: 3,
       idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 7000,
     });
 
     // Prevent unhandled error crashes on idle clients (critical for serverless / Supabase)
@@ -351,7 +357,7 @@ export async function getDatabaseStatus() {
     engine: isPostgresConnected ? 'PostgreSQL (Supabase)' : 'In-Memory Relational Engine',
     connected: true,
     isPostgres: isPostgresConnected,
-    hasDatabaseUrl: Boolean(connectionString),
+    hasDatabaseUrl: Boolean(getConnectionString()),
     counts
   };
 }

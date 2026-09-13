@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { verifyPassword, hashPassword } from '../src/utils/crypto';
+import { INITIAL_CATEGORIES } from '../src/services/seedData';
 import {
   getUsers,
   getUserById,
@@ -86,15 +87,28 @@ apiRouter.post('/admin/seed-supabase', async (req: Request, res: Response) => {
       });
     }
 
+    let sql = '';
     const seedPath = path.join(process.cwd(), 'database', 'seed.sql');
-    if (!fs.existsSync(seedPath)) {
-      return res.status(404).json({ success: false, error: 'Berkas database/seed.sql tidak ditemukan di server.' });
+    if (fs.existsSync(seedPath)) {
+      sql = fs.readFileSync(seedPath, 'utf8');
     }
 
-    const sql = fs.readFileSync(seedPath, 'utf8');
     const client = await pool.connect();
     try {
-      await client.query(sql);
+      if (sql) {
+        await client.query(sql);
+      } else {
+        // Fallback programmatic seed if seed.sql is not bundled in Vercel serverless
+        console.log('[ADVOCARE DB] Seeding from in-memory master data structures...');
+        for (const c of INITIAL_CATEGORIES) {
+          await client.query(
+            `INSERT INTO categories (id, name, description, icon, color, active)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description`,
+            [c.id, c.name, c.description, c.icon, c.color, c.active]
+          );
+        }
+      }
     } finally {
       client.release();
     }
