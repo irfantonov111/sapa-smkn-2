@@ -3,8 +3,11 @@
 -- Siap digunakan di Supabase, Neon, Vercel Postgres, atau PostgreSQL Lokal.
 -- ==============================================================================
 
+-- Wajib: Arahkan eksekusi secara ketat ke skema public agar tidak bertabrakan dengan skema internal Supabase (seperti realtime.messages)
+SET search_path = public;
+
 -- 1. Users (Kredensial Pengguna: Siswa, Guru, Admin)
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS public.users (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
@@ -17,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- 2. Classes (Rombongan Belajar / Kelas Sekolah: TKJ, TKP, TBKR)
-CREATE TABLE IF NOT EXISTS classes (
+CREATE TABLE IF NOT EXISTS public.classes (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     grade VARCHAR(20) NOT NULL,
@@ -27,18 +30,18 @@ CREATE TABLE IF NOT EXISTS classes (
 );
 
 -- 3. Students (Profil Siswa)
-CREATE TABLE IF NOT EXISTS students (
+CREATE TABLE IF NOT EXISTS public.students (
     id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     nis VARCHAR(50) UNIQUE NOT NULL,
-    class_id VARCHAR(50) REFERENCES classes(id) ON DELETE SET NULL,
+    class_id VARCHAR(50) REFERENCES public.classes(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 4. Teachers (Profil Guru: Guru BK atau Wali Kelas)
-CREATE TABLE IF NOT EXISTS teachers (
+CREATE TABLE IF NOT EXISTS public.teachers (
     id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     nip VARCHAR(255) UNIQUE NOT NULL,
     teacher_type VARCHAR(30) NOT NULL CHECK (teacher_type IN ('guru_bk', 'wali_kelas')),
     specialization VARCHAR(255),
@@ -51,7 +54,7 @@ CREATE TABLE IF NOT EXISTS teachers (
 );
 
 -- 5. Categories (Kategori Aduan / Bimbingan)
-CREATE TABLE IF NOT EXISTS categories (
+CREATE TABLE IF NOT EXISTS public.categories (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description TEXT,
@@ -61,13 +64,13 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 
 -- 6. Reports (Data Aduan / Bimbingan Konseling Siswa)
-CREATE TABLE IF NOT EXISTS reports (
+CREATE TABLE IF NOT EXISTS public.reports (
     id VARCHAR(50) PRIMARY KEY,
     report_code VARCHAR(30) UNIQUE NOT NULL,
-    student_id VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    category_id VARCHAR(50) NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    student_id VARCHAR(50) NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+    category_id VARCHAR(50) NOT NULL REFERENCES public.categories(id) ON DELETE RESTRICT,
     assigned_to VARCHAR(30) NOT NULL CHECK (assigned_to IN ('guru_bk', 'wali_kelas')),
-    assigned_teacher_id VARCHAR(50) REFERENCES teachers(id) ON DELETE SET NULL,
+    assigned_teacher_id VARCHAR(50) REFERENCES public.teachers(id) ON DELETE SET NULL,
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     urgency VARCHAR(20) NOT NULL CHECK (urgency IN ('rendah', 'sedang', 'tinggi')),
@@ -80,30 +83,30 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 
 -- 7. Messages (Obrolan Interaktif Dua Arah Siswa & Guru)
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE IF NOT EXISTS public.messages (
     id VARCHAR(50) PRIMARY KEY,
-    report_id VARCHAR(50) NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
-    sender_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    report_id VARCHAR(50) NOT NULL REFERENCES public.reports(id) ON DELETE CASCADE,
+    sender_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     message TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     is_read BOOLEAN DEFAULT FALSE
 );
 
 -- 8. Report Status History (Audit Trail Perkembangan Penanganan)
-CREATE TABLE IF NOT EXISTS report_status_history (
+CREATE TABLE IF NOT EXISTS public.report_status_history (
     id VARCHAR(50) PRIMARY KEY,
-    report_id VARCHAR(50) NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    report_id VARCHAR(50) NOT NULL REFERENCES public.reports(id) ON DELETE CASCADE,
     status VARCHAR(30) NOT NULL,
-    changed_by VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    changed_by VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     note TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 9. Notifications (Pemberitahuan Akun Pengguna)
-CREATE TABLE IF NOT EXISTS notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
     id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    report_id VARCHAR(50) REFERENCES reports(id) ON DELETE CASCADE,
+    user_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    report_id VARCHAR(50) REFERENCES public.reports(id) ON DELETE CASCADE,
     title VARCHAR(200) NOT NULL,
     message TEXT NOT NULL,
     is_read BOOLEAN DEFAULT FALSE,
@@ -111,10 +114,10 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 -- 10. Student Mood Checks (Pencatatan Mood & Kesehatan Mental Siswa Harian)
-CREATE TABLE IF NOT EXISTS student_mood_checks (
+CREATE TABLE IF NOT EXISTS public.student_mood_checks (
     id VARCHAR(50) PRIMARY KEY,
-    student_id VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    student_user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    student_id VARCHAR(50) NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+    student_user_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     student_name VARCHAR(150) NOT NULL,
     student_nis VARCHAR(50) NOT NULL,
     student_avatar TEXT,
@@ -137,7 +140,7 @@ CREATE TABLE IF NOT EXISTS student_mood_checks (
 );
 
 -- 11. Announcements (Pengumuman & Edukasi BK Sekolah)
-CREATE TABLE IF NOT EXISTS announcements (
+CREATE TABLE IF NOT EXISTS public.announcements (
     id VARCHAR(50) PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
@@ -161,7 +164,7 @@ CREATE TABLE IF NOT EXISTS announcements (
 );
 
 -- 12. System Settings (Pengaturan Informasi Sekolah & Kontak Admin)
-CREATE TABLE IF NOT EXISTS system_settings (
+CREATE TABLE IF NOT EXISTS public.system_settings (
     id VARCHAR(50) PRIMARY KEY,
     school_name VARCHAR(200) NOT NULL,
     school_tagline TEXT,
@@ -173,20 +176,20 @@ CREATE TABLE IF NOT EXISTS system_settings (
 );
 
 -- Indeks untuk Performa Query
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
-CREATE INDEX IF NOT EXISTS idx_students_nis ON students(nis);
-CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id);
-CREATE INDEX IF NOT EXISTS idx_teachers_nip ON teachers(nip);
-CREATE INDEX IF NOT EXISTS idx_teachers_assigned_classes ON teachers USING gin (assigned_class_ids);
-CREATE INDEX IF NOT EXISTS idx_classes_bk_teacher ON classes(bk_teacher_id);
-CREATE INDEX IF NOT EXISTS idx_classes_homeroom_teacher ON classes(homeroom_teacher_id);
-CREATE INDEX IF NOT EXISTS idx_reports_student ON reports(student_id);
-CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
-CREATE INDEX IF NOT EXISTS idx_reports_assigned ON reports(assigned_to);
-CREATE INDEX IF NOT EXISTS idx_messages_report ON messages(report_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
-CREATE INDEX IF NOT EXISTS idx_status_history_report ON report_status_history(report_id);
-CREATE INDEX IF NOT EXISTS idx_mood_student ON student_mood_checks(student_id);
-CREATE INDEX IF NOT EXISTS idx_mood_date ON student_mood_checks(date);
-CREATE INDEX IF NOT EXISTS idx_announcements_target ON announcements(target_grade);
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
+CREATE INDEX IF NOT EXISTS idx_students_nis ON public.students(nis);
+CREATE INDEX IF NOT EXISTS idx_students_class ON public.students(class_id);
+CREATE INDEX IF NOT EXISTS idx_teachers_nip ON public.teachers(nip);
+CREATE INDEX IF NOT EXISTS idx_teachers_assigned_classes ON public.teachers USING gin (assigned_class_ids);
+CREATE INDEX IF NOT EXISTS idx_classes_bk_teacher ON public.classes(bk_teacher_id);
+CREATE INDEX IF NOT EXISTS idx_classes_homeroom_teacher ON public.classes(homeroom_teacher_id);
+CREATE INDEX IF NOT EXISTS idx_reports_student ON public.reports(student_id);
+CREATE INDEX IF NOT EXISTS idx_reports_status ON public.reports(status);
+CREATE INDEX IF NOT EXISTS idx_reports_assigned ON public.reports(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_messages_report ON public.messages(report_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_status_history_report ON public.report_status_history(report_id);
+CREATE INDEX IF NOT EXISTS idx_mood_student ON public.student_mood_checks(student_id);
+CREATE INDEX IF NOT EXISTS idx_mood_date ON public.student_mood_checks(date);
+CREATE INDEX IF NOT EXISTS idx_announcements_target ON public.announcements(target_grade);
