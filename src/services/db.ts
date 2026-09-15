@@ -315,18 +315,39 @@ class DatabaseService {
     engine: string;
     isPostgres: boolean;
     hasDatabaseUrl: boolean;
+    provider?: string;
+    host?: string;
+    port?: string;
+    isPooler?: boolean;
+    isPrisma?: boolean;
+    isSupabaseDirectV6?: boolean;
+    pingMs?: number | null;
+    lastError?: string | null;
+    warnings?: string[];
+    recommendations?: string[];
     counts?: { users: number; classes: number; teachers: number; students: number; reports: number };
   }> {
     try {
       const res = await fetch('/api/health');
       if (res.ok) {
         const data = await res.json();
+        const db = data.database || {};
         return {
           status: 'online',
-          engine: data.database?.engine || 'Express Server',
-          isPostgres: Boolean(data.database?.isPostgres),
-          hasDatabaseUrl: Boolean(data.database?.hasDatabaseUrl),
-          counts: data.database?.counts
+          engine: db.engine || 'Express Server',
+          isPostgres: Boolean(db.isPostgres),
+          hasDatabaseUrl: Boolean(db.hasDatabaseUrl),
+          provider: db.provider,
+          host: db.host,
+          port: db.port,
+          isPooler: Boolean(db.isPooler),
+          isPrisma: Boolean(db.isPrisma),
+          isSupabaseDirectV6: Boolean(db.isSupabaseDirectV6),
+          pingMs: db.pingMs,
+          lastError: db.lastError,
+          warnings: db.warnings,
+          recommendations: db.recommendations,
+          counts: db.counts
         };
       }
     } catch {
@@ -337,6 +358,7 @@ class DatabaseService {
       engine: 'In-Memory Relational Engine',
       isPostgres: false,
       hasDatabaseUrl: false,
+      isPrisma: false,
       counts: {
         users: this.state.users.length,
         classes: this.state.classes.length,
@@ -345,6 +367,43 @@ class DatabaseService {
         reports: this.state.reports.length
       }
     };
+  }
+
+  // Actively test database connection from backend to provider (Supabase/Neon/PostgreSQL/Prisma)
+  public async testServerDatabase(): Promise<{
+    success: boolean;
+    provider: string;
+    host: string;
+    port: string;
+    database: string;
+    isPooler: boolean;
+    isPrisma?: boolean;
+    isSupabaseDirectV6?: boolean;
+    pingMs?: number;
+    error?: string;
+    hasDatabaseUrl: boolean;
+    timestamp: string;
+    warnings?: string[];
+    recommendations?: string[];
+    counts?: any;
+  }> {
+    try {
+      const res = await fetch('/api/admin/test-db', { method: 'POST' });
+      const data = await res.json();
+      return data;
+    } catch (err: any) {
+      return {
+        success: false,
+        provider: 'Unknown',
+        host: 'unreachable',
+        port: '-',
+        database: '-',
+        isPooler: false,
+        hasDatabaseUrl: false,
+        error: err.message || 'Gagal menghubungi server API.',
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   /**

@@ -13,9 +13,8 @@ initDatabase().catch(err => {
   console.error('[ADVOCARE DB] Error during initDatabase:', err);
 });
 
-// Mount API routes under /api and root fallback (for Vercel rewrites)
+// Mount API routes under /api
 app.use('/api', apiRouter);
-app.use('/', apiRouter);
 
 // Global error handler to prevent serverless function crashes
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

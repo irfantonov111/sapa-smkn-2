@@ -31,19 +31,90 @@ import {
   INITIAL_MOOD_CHECKS
 } from '../src/services/seedData';
 import { decryptNip, hashPassword } from '../src/utils/crypto';
+import {
+  getPrismaClient,
+  testPrismaDatabase,
+  getPrismaStatus,
+  inspectConnectionString,
+  getPrismaConnectionString,
+  withPrismaRetry
+} from './prisma';
 
 const { Pool } = pg;
 
-// Helper to get sanitized DATABASE_URL
-function getConnectionString(): string | undefined {
-  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SUPABASE_DATABASE_URL;
-  if (!url) return undefined;
-  const trimmed = url.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+// Helper to extract sanitized DATABASE_URL from common environment variable names
+export function getConnectionString(): string | undefined {
+  const candidates = [
+    process.env.DATABASE_URL,
+    process.env.POSTGRES_URL,
+    process.env.POSTGRES_PRISMA_URL,
+    process.env.POSTGRES_URL_NON_POOLING,
+    process.env.SUPABASE_DATABASE_URL,
+    process.env.NEON_DATABASE_URL,
+    process.env.DB_URL
+  ];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    let trimmed = raw.trim();
+    // Strip accidental wrapping quotes (e.g. "postgresql://..." or 'postgresql://...')
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+      trimmed = trimmed.slice(1, -1).trim();
+    }
+    if (trimmed.length > 0) return trimmed;
+  }
+  return undefined;
+}
+
+// Extract provider and connection details safely without leaking secrets
+export function getMaskedDbInfo(connStr?: string) {
+  if (!connStr) {
+    return {
+      hasUrl: false,
+      host: 'none',
+      port: '-',
+      database: 'none',
+      provider: 'In-Memory Relational Engine',
+      isPooler: false
+    };
+  }
+  try {
+    const url = new URL(connStr);
+    let provider = 'PostgreSQL';
+    if (url.hostname.includes('supabase')) provider = 'Supabase PostgreSQL';
+    else if (url.hostname.includes('neon')) provider = 'Neon PostgreSQL';
+    else if (url.hostname.includes('aiven')) provider = 'Aiven PostgreSQL';
+    else if (url.hostname.includes('render')) provider = 'Render PostgreSQL';
+    else if (url.hostname.includes('railway')) provider = 'Railway PostgreSQL';
+    else if (url.hostname.includes('tembo')) provider = 'Tembo PostgreSQL';
+
+    const isPooler = url.port === '6543' || url.hostname.includes('pooler');
+
+    return {
+      hasUrl: true,
+      host: url.hostname,
+      port: url.port || '5432',
+      database: url.pathname.replace(/^\//, '') || 'postgres',
+      provider,
+      isPooler
+    };
+  } catch {
+    return {
+      hasUrl: true,
+      host: 'valid-uri',
+      port: '5432',
+      database: 'postgres',
+      provider: 'PostgreSQL',
+      isPooler: false
+    };
+  }
 }
 
 let pool: pg.Pool | null = null;
 let isPostgresConnected = false;
+let lastDbError: string | null = null;
+let lastDbPingMs: number | null = null;
+let lastCheckedAt: string | null = null;
+let isInitializing = false;
 
 // Fallback in-memory state when DATABASE_URL is not yet provided
 interface MemoryStore {
@@ -77,30 +148,50 @@ const memoryStore: MemoryStore = {
 export async function initDatabase(): Promise<{ isPostgres: boolean; error?: string }> {
   const connStr = getConnectionString();
   if (!connStr) {
+    lastDbError = 'Variabel lingkungan DATABASE_URL / POSTGRES_URL belum diatur di Vercel.';
+    isPostgresConnected = false;
     console.log('[ADVOCARE DB] No DATABASE_URL found. Running with high-performance In-Memory relational engine.');
-    return { isPostgres: false };
+    return { isPostgres: false, error: lastDbError };
   }
 
+  const dbInfo = getMaskedDbInfo(connStr);
+
   try {
+    let isLocalhost = false;
+    try {
+      const parsed = new URL(connStr);
+      isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    } catch {}
+
+    if (pool) {
+      try { await pool.end(); } catch {}
+      pool = null;
+    }
+
     pool = new Pool({
       connectionString: connStr,
-      ssl: process.env.NODE_ENV === 'production' || connStr.includes('supabase') || connStr.includes('neon')
-        ? { rejectUnauthorized: false }
-        : false,
-      max: 3,
+      ssl: isLocalhost ? false : { rejectUnauthorized: false },
+      max: 2,
       idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 7000,
+      connectionTimeoutMillis: 8000,
     });
 
     // Prevent unhandled error crashes on idle clients (critical for serverless / Supabase)
     pool.on('error', (err) => {
       console.warn('[ADVOCARE DB] PostgreSQL client warning (handled gracefully):', err.message);
+      lastDbError = err.message;
     });
 
     const client = await pool.connect();
     try {
-      console.log('[ADVOCARE DB] Connected successfully to PostgreSQL / Supabase!');
+      const pingStart = Date.now();
+      await client.query('SELECT 1');
+      lastDbPingMs = Date.now() - pingStart;
+      lastCheckedAt = new Date().toISOString();
+      lastDbError = null;
       isPostgresConnected = true;
+
+      console.log(`[ADVOCARE DB] Connected successfully to PostgreSQL (${dbInfo.provider} @ ${dbInfo.host}:${dbInfo.port}) in ${lastDbPingMs}ms!`);
 
       // Run automatic migration to create tables if they don't exist
       await client.query(`
@@ -300,31 +391,78 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
     return { isPostgres: true };
   } catch (err: any) {
     console.warn('[ADVOCARE DB] Warning: PostgreSQL connection failed. Falling back to in-memory store:', err.message);
+    lastDbError = err.message;
+    lastCheckedAt = new Date().toISOString();
     isPostgresConnected = false;
+    if (pool) {
+      try { await pool.end(); } catch {}
+      pool = null;
+    }
     return { isPostgres: false, error: err.message };
   }
 }
 
-let dbInitPromise: Promise<{ isPostgres: boolean; error?: string }> | null = null;
+export async function ensureDbInitialized(forceRetry = false): Promise<{ isPostgres: boolean; error?: string }> {
+  if (isPostgresConnected && !forceRetry) return { isPostgres: true };
 
-export async function ensureDbInitialized(): Promise<{ isPostgres: boolean; error?: string }> {
-  if (isPostgresConnected) return { isPostgres: true };
-  if (!dbInitPromise) {
-    dbInitPromise = initDatabase().catch(err => {
-      console.warn('[ADVOCARE DB] Error initializing DB:', err);
-      return { isPostgres: false, error: err?.message };
-    });
+  if (isInitializing) {
+    let waitCount = 0;
+    while (isInitializing && waitCount < 30) {
+      await new Promise(r => setTimeout(r, 100));
+      waitCount++;
+    }
+    if (isPostgresConnected) return { isPostgres: true };
   }
-  return await dbInitPromise;
+
+  isInitializing = true;
+  try {
+    const res = await initDatabase();
+    return res;
+  } finally {
+    isInitializing = false;
+  }
 }
 
 export function getPool() {
   return pool;
 }
 
+export async function testDatabaseConnection() {
+  return await testPrismaDatabase();
+}
+
 export async function getDatabaseStatus() {
+  const connStr = getConnectionString();
+  const dbInfo = inspectConnectionString(connStr);
+  const prismaStatus = getPrismaStatus();
+
   let counts = { users: 0, classes: 0, teachers: 0, students: 0, reports: 0 };
-  if (isPostgresConnected && pool) {
+  const prisma = getPrismaClient();
+
+  if (prisma) {
+    try {
+      const c = await withPrismaRetry(async (client) => {
+        const [u, cl, t, s, r] = await Promise.all([
+          client.user.count(),
+          client.schoolClass.count(),
+          client.teacher.count(),
+          client.student.count(),
+          client.report.count()
+        ]);
+        return { users: u, classes: cl, teachers: t, students: s, reports: r };
+      });
+      counts = c;
+    } catch {
+      // If tables not ready or fallback
+      counts = {
+        users: memoryStore.users.length,
+        classes: memoryStore.classes.length,
+        teachers: memoryStore.teachers.length,
+        students: memoryStore.students.length,
+        reports: memoryStore.reports.length
+      };
+    }
+  } else if (isPostgresConnected && pool) {
     try {
       const [uRes, cRes, tRes, sRes, rRes] = await Promise.all([
         pool.query('SELECT COUNT(*) FROM users'),
@@ -353,13 +491,54 @@ export async function getDatabaseStatus() {
     };
   }
 
+  const isConnected = prismaStatus.connected || isPostgresConnected;
+
   return {
-    engine: isPostgresConnected ? 'PostgreSQL (Supabase)' : 'In-Memory Relational Engine',
-    connected: true,
-    isPostgres: isPostgresConnected,
-    hasDatabaseUrl: Boolean(getConnectionString()),
+    engine: isConnected ? `Prisma ORM (${dbInfo.provider})` : 'In-Memory Relational Engine',
+    connected: isConnected || true,
+    isPostgres: isConnected,
+    isPrisma: Boolean(prismaStatus.connected),
+    hasDatabaseUrl: Boolean(connStr),
+    provider: dbInfo.provider,
+    host: dbInfo.host,
+    port: dbInfo.port,
+    isPooler: dbInfo.isPooler,
+    isSupabaseDirectV6: dbInfo.isSupabaseDirectV6,
+    pingMs: prismaStatus.pingMs ?? lastDbPingMs,
+    lastError: prismaStatus.lastError ?? lastDbError,
+    lastCheckedAt: prismaStatus.lastCheckedAt ?? lastCheckedAt,
+    warnings: dbInfo.warnings,
+    recommendations: dbInfo.recommendations,
     counts
   };
+}
+
+export async function updateUserPassword(
+  userId: string,
+  newHashedPassword: string,
+  passwordChanged = true
+): Promise<User | null> {
+  if (isPostgresConnected && pool) {
+    const res = await pool.query(
+      'UPDATE users SET password = $1, password_changed = $2 WHERE id = $3 RETURNING *',
+      [newHashedPassword, passwordChanged, userId]
+    );
+    if (res.rows.length > 0) {
+      const mUser = memoryStore.users.find(u => u.id === userId);
+      if (mUser) {
+        mUser.password = newHashedPassword;
+        mUser.password_changed = passwordChanged;
+      }
+      return res.rows[0];
+    }
+    return null;
+  }
+
+  const user = memoryStore.users.find(u => u.id === userId);
+  if (!user) return null;
+  user.password = newHashedPassword;
+  user.password_changed = passwordChanged;
+  return user;
 }
 
 // ==========================================
@@ -831,11 +1010,11 @@ export async function createReport(data: {
 
   if (isPostgresConnected && pool) {
     await pool.query(
-      `INSERT INTO reports (id, report_code, student_id, category_id, assigned_to, title, description, urgency, privacy, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO reports (id, report_code, student_id, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         newReport.id, newReport.report_code, newReport.student_id, newReport.category_id,
-        newReport.assigned_to, newReport.title, newReport.description, newReport.urgency,
+        newReport.assigned_to, newReport.assigned_teacher_id, newReport.title, newReport.description, newReport.urgency,
         newReport.privacy, newReport.status, newReport.created_at, newReport.updated_at
       ]
     );

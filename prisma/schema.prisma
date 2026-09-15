@@ -1,0 +1,213 @@
+// ==============================================================================
+// SAPA (Sarana Pendampingan dan Asistensi Siswa) Prisma Schema
+// Dikonfigurasi untuk PostgreSQL di Supabase (Pooler/Direct), Neon, & Vercel
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id               String    @id
+  name             String
+  email            String    @unique
+  password         String?
+  role             String    // 'siswa' | 'guru' | 'admin'
+  avatar           String?
+  phone            String?
+  password_changed Boolean   @default(false)
+  created_at       DateTime  @default(now())
+
+  student          Student?
+  teacher          Teacher?
+  messages         Message[]
+  historyChanges   ReportStatusHistory[]
+  notifications    Notification[]
+
+  @@map("users")
+}
+
+model SchoolClass {
+  id                  String    @id
+  name                String
+  grade               String
+  major               String
+  homeroom_teacher_id String?
+  bk_teacher_id       String?
+
+  students            Student[]
+
+  @@map("classes")
+}
+
+model Student {
+  id         String       @id
+  user_id    String       @unique
+  nis        String       @unique
+  class_id   String?
+  created_at DateTime     @default(now())
+
+  user       User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  class      SchoolClass? @relation(fields: [class_id], references: [id], onDelete: SetNull)
+  reports    Report[]
+
+  @@map("students")
+}
+
+model Teacher {
+  id                 String    @id
+  user_id            String    @unique
+  nip                String    @unique
+  teacher_type       String    // 'guru_bk' | 'wali_kelas'
+  specialization     String?
+  room               String?
+  bio                String?
+  available_hours    String?
+  is_active          Boolean   @default(true)
+  assigned_class_ids Json?     @default("[]")
+  created_at         DateTime  @default(now())
+
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  assignedReports    Report[]
+
+  @@map("teachers")
+}
+
+model Category {
+  id          String   @id
+  name        String
+  description String?
+  icon        String?  @default("MessageCircle")
+  color       String?  @default("blue")
+  active      Boolean  @default(true)
+
+  reports     Report[]
+
+  @@map("categories")
+}
+
+model Report {
+  id                  String                @id
+  report_code         String                @unique
+  student_id          String
+  category_id         String
+  assigned_to         String                // 'guru_bk' | 'wali_kelas'
+  assigned_teacher_id String?
+  title               String
+  description         String
+  urgency             String                // 'rendah' | 'sedang' | 'tinggi'
+  privacy             String                // 'terbuka' | 'terbatas' | 'anonim'
+  status              String                @default("terkirim") // 'terkirim' | 'dibaca' | 'direspons' | 'ditindaklanjuti' | 'selesai'
+  attachments         Json?                 @default("[]")
+  created_at          DateTime              @default(now())
+  updated_at          DateTime              @default(now()) @updatedAt
+  closed_at           DateTime?
+
+  student             Student               @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  category            Category              @relation(fields: [category_id], references: [id], onDelete: Restrict)
+  assigned_teacher    Teacher?              @relation(fields: [assigned_teacher_id], references: [id], onDelete: SetNull)
+  messages            Message[]
+  history             ReportStatusHistory[]
+
+  @@map("reports")
+}
+
+model Message {
+  id         String   @id
+  report_id  String
+  sender_id  String
+  message    String
+  created_at DateTime @default(now())
+  is_read    Boolean  @default(false)
+
+  report     Report   @relation(fields: [report_id], references: [id], onDelete: Cascade)
+  sender     User     @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model ReportStatusHistory {
+  id         String   @id
+  report_id  String
+  status     String
+  changed_by String
+  note       String?
+  created_at DateTime @default(now())
+
+  report     Report   @relation(fields: [report_id], references: [id], onDelete: Cascade)
+  changer    User     @relation(fields: [changed_by], references: [id], onDelete: Cascade)
+
+  @@map("report_status_history")
+}
+
+model Notification {
+  id         String   @id
+  user_id    String
+  report_id  String
+  title      String
+  message    String
+  is_read    Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Announcement {
+  id                String   @id
+  title             String
+  content           String
+  author_id         String?
+  author_user_id    String?
+  author_name       String
+  author_role       String
+  author_avatar     String?
+  target_grade      String   @default("all")
+  target_class_id   String?
+  target_class_name String?
+  category          String?
+  attachments       Json?    @default("[]")
+  link_url          String?
+  link_title        String?
+  image_url         String?
+  video_url         String?
+  read_by           Json?    @default("[]")
+  created_at        DateTime @default(now())
+  updated_at        DateTime @default(now()) @updatedAt
+
+  @@map("announcements")
+}
+
+model MoodCheck {
+  id                       String    @id
+  student_id               String
+  student_user_id          String
+  student_name             String
+  student_nis              String
+  student_avatar           String?
+  class_id                 String
+  class_name               String
+  date                     String
+  time                     String
+  mood                     String
+  mood_score               Int
+  emotions                 Json?     @default("[]")
+  trigger                  String?
+  note                     String?
+  needs_counseling         Boolean   @default(false)
+  status                   String    @default("belum_ditinjau")
+  reviewed_by_teacher_id   String?
+  reviewed_by_teacher_name String?
+  reviewed_at              DateTime?
+  teacher_notes            String?
+  created_at               DateTime  @default(now())
+
+  @@map("mood_checks")
+}

@@ -29,10 +29,26 @@ import {
   getDatabaseStatus,
   getBkTeachers,
   ensureDbInitialized,
+  testDatabaseConnection,
+  updateUserPassword,
+  getMaskedDbInfo,
+  getConnectionString,
   getPool
 } from './db';
 
 export const apiRouter = Router();
+
+// API Root Status
+apiRouter.get('/', async (req: Request, res: Response) => {
+  const dbStatus = await getDatabaseStatus();
+  res.json({
+    status: 'ok',
+    app: 'SAPA Counseling & Reporting Backend API',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    database: dbStatus
+  });
+});
 
 // Ensure DB is initialized before executing any request
 apiRouter.use(async (req: Request, res: Response, next: NextFunction) => {
@@ -122,6 +138,51 @@ apiRouter.post('/admin/seed-supabase', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Error executing seed to Supabase:', err);
     res.status(500).json({ success: false, error: err.message || 'Gagal menjalankan seed SQL ke Supabase.' });
+  }
+});
+
+// Real-time Database Connection Test
+apiRouter.post('/admin/test-db', async (req: Request, res: Response) => {
+  try {
+    const result = await testDatabaseConnection();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Database Diagnostics (Environment check & masked URL info)
+apiRouter.get('/admin/db-diagnostics', async (req: Request, res: Response) => {
+  try {
+    const connStr = getConnectionString();
+    const info = getMaskedDbInfo(connStr);
+    const dbStatus = await getDatabaseStatus();
+
+    res.json({
+      success: true,
+      hasDatabaseUrl: Boolean(connStr),
+      environment: {
+        nodeEnv: process.env.NODE_ENV || 'development',
+        hasDatabaseUrl: Boolean(process.env.DATABASE_URL),
+        hasPostgresUrl: Boolean(process.env.POSTGRES_URL),
+        hasSupabaseUrl: Boolean(process.env.SUPABASE_DATABASE_URL),
+      },
+      connection: {
+        provider: info.provider,
+        host: info.host,
+        port: info.port,
+        database: info.database,
+        isPooler: info.isPooler,
+        sslRequired: info.host !== 'localhost' && info.host !== '127.0.0.1'
+      },
+      status: dbStatus
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -215,15 +276,14 @@ apiRouter.post('/users/:id/reset-password', async (req: Request, res: Response) 
       return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
     }
     const finalHash = hashedPassword || (password ? hashPassword(password) : undefined);
-    if (finalHash) {
-      user.password = finalHash;
+    if (!finalHash) {
+      return res.status(400).json({ error: 'Kata sandi baru wajib disediakan' });
     }
-    if (password_changed !== undefined) {
-      user.password_changed = password_changed;
-    } else if (user.role === 'siswa') {
-      user.password_changed = false;
-    }
-    res.json({ success: true, message: 'Kata sandi berhasil direset', user });
+
+    const changed = password_changed !== undefined ? password_changed : (user.role === 'siswa' ? false : true);
+    const updatedUser = await updateUserPassword(id, finalHash, changed);
+
+    res.json({ success: true, message: 'Kata sandi berhasil direset', user: updatedUser || user });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -239,11 +299,12 @@ apiRouter.post('/users/:id/change-password', async (req: Request, res: Response)
       return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
     }
     const finalHash = hashedPassword || (password ? hashPassword(password) : undefined);
-    if (finalHash) {
-      user.password = finalHash;
+    if (!finalHash) {
+      return res.status(400).json({ error: 'Kata sandi baru wajib diisi' });
     }
-    user.password_changed = true;
-    res.json({ success: true, message: 'Kata sandi berhasil diperbarui', user });
+
+    const updatedUser = await updateUserPassword(id, finalHash, true);
+    res.json({ success: true, message: 'Kata sandi berhasil diperbarui', user: updatedUser || user });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -377,13 +438,14 @@ apiRouter.post('/reports', async (req: Request, res: Response) => {
 apiRouter.patch('/reports/:id/status', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, changedByUserId, note } = req.body;
+    const { status, changedByUserId, changedBy, note } = req.body;
+    const modifierId = changedByUserId || changedBy;
 
-    if (!status || !changedByUserId) {
+    if (!status || !modifierId) {
       return res.status(400).json({ error: 'Status dan ID Pengubah wajib dicantumkan' });
     }
 
-    const updated = await updateReportStatus(id, status, changedByUserId, note);
+    const updated = await updateReportStatus(id, status, modifierId, note);
     if (!updated) {
       return res.status(404).json({ error: 'Laporan tidak ditemukan' });
     }
