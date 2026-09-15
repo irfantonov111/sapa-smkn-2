@@ -142,14 +142,20 @@ apiRouter.post('/admin/seed-supabase', async (req: Request, res: Response) => {
 });
 
 // Real-time Database Connection Test
-apiRouter.post('/admin/test-db', async (req: Request, res: Response) => {
+apiRouter.all('/admin/test-db', async (req: Request, res: Response) => {
   try {
     const result = await testDatabaseConnection();
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({
+    res.status(200).json({
       success: false,
-      error: err.message,
+      provider: 'Unknown',
+      host: 'unknown',
+      port: '-',
+      database: '-',
+      isPooler: false,
+      hasDatabaseUrl: false,
+      error: err.message || 'Gagal menguji koneksi database',
       timestamp: new Date().toISOString()
     });
   }

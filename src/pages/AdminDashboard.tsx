@@ -457,11 +457,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                       </div>
                     </div>
-                  ) : (testResult?.error?.includes('password') || serverStatus?.lastError?.includes('password')) ? (
-                    <p className="text-slate-600">
-                      Kata sandi database salah atau mengandung karakter khusus (@, #, $, %, ?) yang belum di-URL encode.<br />
-                      Ganti karakter simbol dengan persen-encoding (misal: <code>@</code> diubah menjadi <code>%40</code>), lalu simpan di Vercel dan Redeploy.
-                    </p>
+                  ) : (testResult?.error?.includes('password') || serverStatus?.lastError?.includes('password') || JSON.stringify(testResult?.warnings || []).includes('YOUR-PASSWORD') || JSON.stringify(testResult?.warnings || []).includes('kurung siku')) ? (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5">
+                      <p className="text-amber-900 font-semibold">
+                        Periksa Kata Sandi Database:
+                      </p>
+                      <ul className="list-disc list-inside space-y-1 text-slate-700">
+                        <li><strong>Hapus kurung siku [ ]:</strong> Pastikan teks <code>[YOUR-PASSWORD]</code> diganti langsung dengan password database asli Anda tanpa tanda <code>[</code> dan <code>]</code>.</li>
+                        <li><strong>Karakter Khusus:</strong> Jika password Anda mengandung simbol seperti <code>@</code>, <code>#</code>, <code>$</code>, atau <code>%</code>, ubah menjadi URL-encode (misal <code>@</code> menjadi <code>%40</code>, <code>#</code> menjadi <code>%23</code>).</li>
+                        <li><strong>Wajib Redeploy:</strong> Setelah memperbarui nilai di Vercel Settings, buka menu <strong>Deployments &rarr; titik tiga (...) &rarr; Redeploy</strong>.</li>
+                      </ul>
+                    </div>
                   ) : (
                     <p className="text-slate-600">
                       Pastikan format DATABASE_URL sesuai: <code>postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require</code> dan lakukan <strong>Redeploy</strong> di Vercel setelah mengubah Environment Variables.

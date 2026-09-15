@@ -330,25 +330,28 @@ class DatabaseService {
     try {
       const res = await fetch('/api/health');
       if (res.ok) {
-        const data = await res.json();
-        const db = data.database || {};
-        return {
-          status: 'online',
-          engine: db.engine || 'Express Server',
-          isPostgres: Boolean(db.isPostgres),
-          hasDatabaseUrl: Boolean(db.hasDatabaseUrl),
-          provider: db.provider,
-          host: db.host,
-          port: db.port,
-          isPooler: Boolean(db.isPooler),
-          isPrisma: Boolean(db.isPrisma),
-          isSupabaseDirectV6: Boolean(db.isSupabaseDirectV6),
-          pingMs: db.pingMs,
-          lastError: db.lastError,
-          warnings: db.warnings,
-          recommendations: db.recommendations,
-          counts: db.counts
-        };
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await res.json();
+          const db = data.database || {};
+          return {
+            status: 'online',
+            engine: db.engine || 'Express Server',
+            isPostgres: Boolean(db.isPostgres),
+            hasDatabaseUrl: Boolean(db.hasDatabaseUrl),
+            provider: db.provider,
+            host: db.host,
+            port: db.port,
+            isPooler: Boolean(db.isPooler),
+            isPrisma: Boolean(db.isPrisma),
+            isSupabaseDirectV6: Boolean(db.isSupabaseDirectV6),
+            pingMs: db.pingMs,
+            lastError: db.lastError,
+            warnings: db.warnings,
+            recommendations: db.recommendations,
+            counts: db.counts
+          };
+        }
       }
     } catch {
       // Offline or pure client preview
@@ -387,11 +390,55 @@ class DatabaseService {
     recommendations?: string[];
     counts?: any;
   }> {
+    const controller = new AbortController();
+    const timeoutTimer = setTimeout(() => controller.abort(), 8500);
+
     try {
-      const res = await fetch('/api/admin/test-db', { method: 'POST' });
+      const res = await fetch('/api/admin/test-db', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+      });
+      clearTimeout(timeoutTimer);
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        const isTimeout = res.status === 504 || text.toLowerCase().includes('timeout') || text.includes('FUNCTION_INVOCATION_TIMEOUT');
+        const isVercelCrash = res.status === 500 || text.toLowerCase().includes('server error') || text.includes('FUNCTION_INVOCATION_FAILED');
+
+        return {
+          success: false,
+          provider: 'Vercel Serverless Function',
+          host: 'unreachable',
+          port: '-',
+          database: '-',
+          isPooler: false,
+          hasDatabaseUrl: false,
+          error: isTimeout
+            ? 'Batas waktu server habis (Function Timeout). Koneksi ke server database menggantung (freeze) melebihi batas waktu Vercel.'
+            : isVercelCrash
+            ? 'Serverless Function Vercel mengalami crash atau timeout sebelum dapat mengembalikan JSON.'
+            : `Server backend mengembalikan respon non-JSON (HTTP ${res.status}): ${text.slice(0, 150)}`,
+          timestamp: new Date().toISOString(),
+          warnings: [
+            'Serverless backend Vercel tidak mengembalikan data berformat JSON.',
+            isTimeout || isVercelCrash
+              ? 'Jika menggunakan Supabase, penyebab utama adalah penggunaan port 5432 direct (IPv6). Vercel Serverless hanya mendukung IPv4 sehingga koneksi menggantung (freeze) hingga batas waktu habis.'
+              : 'Periksa log serverless function di tab Deployments > Functions Log Vercel.'
+          ],
+          recommendations: [
+            'SOLUSI: Gunakan Supabase Connection Pooler (Port 6543) dengan host aws-0-[region].pooler.supabase.com:6543 di Vercel Settings > Environment Variables.',
+            'Buka tab "Deployment" di Vercel, pilih deployment aktif, lalu buka menu "Functions" untuk melihat log detail serverless.'
+          ]
+        };
+      }
+
       const data = await res.json();
       return data;
     } catch (err: any) {
+      clearTimeout(timeoutTimer);
+      const isAbort = err.name === 'AbortError';
       return {
         success: false,
         provider: 'Unknown',
@@ -400,8 +447,19 @@ class DatabaseService {
         database: '-',
         isPooler: false,
         hasDatabaseUrl: false,
-        error: err.message || 'Gagal menghubungi server API.',
-        timestamp: new Date().toISOString()
+        error: isAbort
+          ? 'Koneksi ke backend timeout (melebihi 8.5 detik). Serverless function tidak merespons.'
+          : (err.message || 'Gagal menghubungi server API.'),
+        timestamp: new Date().toISOString(),
+        warnings: isAbort
+          ? ['Kemungkinan Vercel Serverless Function menggantung saat membuka socket ke host database yang tidak dapat dijangkau.']
+          : undefined,
+        recommendations: isAbort
+          ? [
+              'Pastikan port koneksi Supabase di Vercel adalah 6543 (Connection Pooler), BUKAN 5432 (Direct).',
+              'Pastikan nilai variabel DATABASE_URL tidak mengandung tanda kutip ganda atau spasi.'
+            ]
+          : undefined
       };
     }
   }
@@ -416,7 +474,16 @@ class DatabaseService {
     counts?: { users: number; classes: number; teachers: number; students: number; reports: number };
   }> {
     try {
-      const res = await fetch('/api/sync');
+      const res = await fetch('/api/sync', { headers: { 'Accept': 'application/json' } });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        return {
+          success: false,
+          isPostgres: false,
+          message: `Server backend mengembalikan respon non-JSON (HTTP ${res.status}): ${text.slice(0, 100)}`
+        };
+      }
       if (!res.ok) {
         return { success: false, isPostgres: false, message: `Server error (${res.status})` };
       }
@@ -485,8 +552,16 @@ class DatabaseService {
     try {
       const res = await fetch('/api/admin/seed-supabase', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        return {
+          success: false,
+          message: `Server backend mengembalikan HTTP ${res.status}: ${text.slice(0, 120)}`
+        };
+      }
       const data = await res.json();
       if (res.ok && data.success) {
         // Automatically sync fresh data into local state

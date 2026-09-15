@@ -427,8 +427,122 @@ export function getPool() {
   return pool;
 }
 
+export async function testDirectPgConnection(): Promise<{
+  success: boolean;
+  provider: string;
+  host: string;
+  port: string;
+  database: string;
+  isPooler: boolean;
+  pingMs?: number;
+  error?: string;
+  hasDatabaseUrl: boolean;
+  timestamp: string;
+  warnings: string[];
+  recommendations: string[];
+  counts?: any;
+}> {
+  const connStr = getConnectionString();
+  const info = inspectConnectionString(connStr);
+  const now = new Date().toISOString();
+
+  if (!connStr) {
+    return {
+      success: false,
+      provider: info.provider,
+      host: info.host,
+      port: info.port,
+      database: info.database,
+      isPooler: info.isPooler,
+      hasDatabaseUrl: false,
+      error: 'Variabel lingkungan DATABASE_URL belum diatur di Vercel.',
+      timestamp: now,
+      warnings: info.warnings,
+      recommendations: info.recommendations
+    };
+  }
+
+  const client = new pg.Client({
+    connectionString: connStr,
+    ssl: info.host === 'localhost' || info.host === '127.0.0.1' ? false : { rejectUnauthorized: false },
+    connectionTimeoutMillis: 4000
+  });
+
+  try {
+    const t0 = Date.now();
+    await client.connect();
+    await client.query('SELECT 1 as ping');
+    const ping = Date.now() - t0;
+    await client.end();
+
+    return {
+      success: true,
+      provider: `${info.provider} (Pure JS Driver)`,
+      host: info.host,
+      port: info.port,
+      database: info.database,
+      isPooler: info.isPooler,
+      hasDatabaseUrl: true,
+      pingMs: ping,
+      timestamp: now,
+      warnings: info.warnings,
+      recommendations: info.recommendations
+    };
+  } catch (err: any) {
+    try { await client.end(); } catch {}
+    return {
+      success: false,
+      provider: info.provider,
+      host: info.host,
+      port: info.port,
+      database: info.database,
+      isPooler: info.isPooler,
+      hasDatabaseUrl: true,
+      error: err.message,
+      timestamp: now,
+      warnings: info.warnings,
+      recommendations: info.recommendations
+    };
+  }
+}
+
 export async function testDatabaseConnection() {
-  return await testPrismaDatabase();
+  try {
+    const prismaResult = await testPrismaDatabase();
+    if (prismaResult.success) {
+      return prismaResult;
+    }
+    // If Prisma failed with binary target or engine error, fallback to pg pure JS driver
+    if (prismaResult.error && (
+      prismaResult.error.includes('Query engine') ||
+      prismaResult.error.includes('binaryTarget') ||
+      prismaResult.error.includes('PrismaClient') ||
+      prismaResult.error.includes('cannot be found')
+    )) {
+      console.log('[ADVOCARE DB] Prisma engine unavailable, testing via pure JS pg Client...');
+      return await testDirectPgConnection();
+    }
+    return prismaResult;
+  } catch (err: any) {
+    console.error('[ADVOCARE DB] testDatabaseConnection top-level error:', err);
+    try {
+      return await testDirectPgConnection();
+    } catch {
+      return {
+        success: false,
+        provider: 'PostgreSQL',
+        host: 'unknown',
+        port: '5432',
+        database: 'postgres',
+        isPooler: false,
+        hasDatabaseUrl: Boolean(getConnectionString()),
+        error: err.message || 'Gagal menguji koneksi database',
+        timestamp: new Date().toISOString(),
+        warnings: ['Terjadi kesalahan saat menguji koneksi.'],
+        recommendations: ['Periksa pengaturan DATABASE_URL di Vercel.']
+      };
+    }
+  }
 }
 
 export async function getDatabaseStatus() {

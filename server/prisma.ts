@@ -91,9 +91,20 @@ export function inspectConnectionString(connStr?: string): SanitizedDbInfo {
       provider = 'Railway PostgreSQL';
     }
 
+    // Check for literal placeholder [YOUR-PASSWORD] or brackets in password
+    if (parsed.password && (
+      parsed.password.includes('[') || 
+      parsed.password.includes(']') || 
+      parsed.password.toUpperCase().includes('YOUR-PASSWORD') ||
+      parsed.password.toUpperCase().includes('YOUR_PASSWORD')
+    )) {
+      warnings.push('Kata sandi masih berupa placeholder [YOUR-PASSWORD] atau mengandung tanda kurung siku [ ].');
+      recommendations.unshift('PENTING: Hapus teks [YOUR-PASSWORD] beserta tanda kurung sikunya [ ], lalu ketik kata sandi database Supabase Anda yang sebenarnya.');
+    }
+
     // Check special characters in password without percent-encoding
-    if (parsed.password && (parsed.password.includes('@') || parsed.password.includes('#') || parsed.password.includes('$'))) {
-      warnings.push('Kata sandi database mengandung karakter khusus yang mungkin perlu di-encode (misal: @ menjadi %40, # menjadi %23).');
+    if (parsed.password && (parsed.password.includes('@') || parsed.password.includes('#') || parsed.password.includes('$') || parsed.password.includes('%'))) {
+      warnings.push('Kata sandi database mengandung karakter khusus. Jika kata sandi mengandung simbol seperti @, #, $, atau %, pastikan menggunakan format URL-encode (misal: @ menjadi %40, # menjadi %23).');
     }
 
     // Check missing sslmode on cloud providers
@@ -139,14 +150,14 @@ export function getOptimizedPrismaUrl(rawUrl?: string): string | undefined {
       url.searchParams.set('connection_limit', '10');
     }
 
-    // Set connection timeout (seconds)
+    // Set connection timeout (seconds) - 4 seconds for serverless to stay under Vercel 10s limit
     if (!url.searchParams.has('connect_timeout')) {
-      url.searchParams.set('connect_timeout', '15');
+      url.searchParams.set('connect_timeout', '4');
     }
 
-    // Set pool timeout (seconds)
+    // Set pool timeout (seconds) - 4 seconds for serverless
     if (!url.searchParams.has('pool_timeout')) {
-      url.searchParams.set('pool_timeout', '15');
+      url.searchParams.set('pool_timeout', '4');
     }
 
     // Ensure sslmode=require for non-localhost
@@ -318,16 +329,30 @@ export async function testPrismaDatabase(): Promise<{
 
   try {
     const t0 = Date.now();
-    // Test basic query via Prisma with retry
-    await withPrismaRetry(async (client) => {
-      await client.$queryRawUnsafe('SELECT 1 as ping');
+
+    // Guard with a strict 4.5-second timeout to prevent Vercel 10s FUNCTION_INVOCATION_TIMEOUT
+    const pingPromise = (async () => {
+      const prisma = getPrismaClient();
+      if (!prisma) {
+        throw new Error('Prisma Client tidak dapat diinisialisasi. Periksa format DATABASE_URL.');
+      }
+      await prisma.$queryRawUnsafe('SELECT 1 as ping');
+      return prisma;
+    })();
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('TIMEOUT_4500MS'));
+      }, 4500);
     });
+
+    const prisma = await Promise.race([pingPromise, timeoutPromise]);
     const ping = Date.now() - t0;
     lastPrismaPingMs = ping;
     isPrismaConnected = true;
     lastPrismaError = null;
 
-    // Fetch counts via Prisma models with retry
+    // Fetch counts with a 2-second timeout so it never hangs
     let userCount = 0;
     let classCount = 0;
     let teacherCount = 0;
@@ -335,23 +360,21 @@ export async function testPrismaDatabase(): Promise<{
     let reportCount = 0;
 
     try {
-      const counts = await withPrismaRetry(async (client) => {
-        const [u, c, t, s, r] = await Promise.all([
-          client.user.count(),
-          client.schoolClass.count(),
-          client.teacher.count(),
-          client.student.count(),
-          client.report.count()
-        ]);
-        return { u, c, t, s, r };
-      });
-      userCount = counts.u;
-      classCount = counts.c;
-      teacherCount = counts.t;
-      studentCount = counts.s;
-      reportCount = counts.r;
+      const countsPromise = Promise.all([
+        prisma.user.count(),
+        prisma.schoolClass.count(),
+        prisma.teacher.count(),
+        prisma.student.count(),
+        prisma.report.count()
+      ]);
+      const countTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('COUNT_TIMEOUT')), 2000));
+      const [u, c, t, s, r] = await Promise.race([countsPromise, countTimeout]);
+      userCount = u;
+      classCount = c;
+      teacherCount = t;
+      studentCount = s;
+      reportCount = r;
     } catch {
-      // If tables do not exist yet in Prisma schema
       info.warnings.push('Tabel belum diinisialisasi di database. Anda dapat menjalankan seed master data atau push schema.');
     }
 
@@ -381,21 +404,29 @@ export async function testPrismaDatabase(): Promise<{
     const warnings = [...info.warnings];
     const recommendations = [...info.recommendations];
 
-    // Analyze specific PostgreSQL / Prisma errors to provide actionable solutions
-    const msg = err.message.toLowerCase();
-    if (msg.includes('p1001') || msg.includes("can't reach database server") || msg.includes('timeout') || msg.includes('enotfound')) {
-      warnings.push('Tidak dapat menjangkau server database (Network Timeout / Host Unreachable).');
-      if (info.isSupabaseDirectV6) {
-        recommendations.push('SOLUSI UTAMA: Ganti port 5432 dengan port 6543 (Supabase Connection Pooler). Vercel Serverless Function tidak dapat menjangkau direct port 5432 Supabase.');
+    const isTimeout =
+      err.message.includes('TIMEOUT_4500MS') ||
+      err.message.includes('timeout') ||
+      err.message.includes('P1001') ||
+      err.message.includes("Can't reach database server");
+
+    if (isTimeout) {
+      warnings.push('Koneksi ke database timeout (melebihi 4.5 detik). Server database tidak merespons.');
+      if (info.isSupabaseDirectV6 || info.port === '5432') {
+        recommendations.unshift('SOLUSI UTAMA (Wajib): Ganti port 5432 dengan port 6543 (Supabase Connection Pooler). Vercel Serverless Function (IPv4) tidak dapat menjangkau host direct port 5432 Supabase (IPv6).');
+        recommendations.push('Format Supabase Pooler: postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true');
       } else {
         recommendations.push('Pastikan firewall/allowlist database Anda mengizinkan koneksi dari semua IP (0.0.0.0/0) atau gunakan Connection Pooler.');
       }
-    } else if (msg.includes('p1000') || msg.includes('authentication failed') || msg.includes('password')) {
-      warnings.push('Otentikasi database gagal. Kata sandi atau nama pengguna salah.');
-      recommendations.push('Periksa kembali kata sandi database di Vercel Settings > Environment Variables. Jika kata sandi mengandung simbol seperti @, gunakan persen-encoding (misal: @ -> %40).');
-    } else if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('table')) {
-      warnings.push('Tabel belum dibuat di database PostgreSQL.');
-      recommendations.push('Klik tombol "Terapkan Master Data ke Database" di dashboard Admin atau jalankan script npx prisma db push.');
+    } else {
+      const msg = err.message.toLowerCase();
+      if (msg.includes('p1000') || msg.includes('authentication failed') || msg.includes('password')) {
+        warnings.push('Otentikasi database gagal. Kata sandi atau nama pengguna salah.');
+        recommendations.push('Periksa kembali kata sandi database di Vercel Settings > Environment Variables. Jika kata sandi mengandung simbol seperti @, gunakan persen-encoding (misal: @ -> %40).');
+      } else if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('table')) {
+        warnings.push('Tabel belum dibuat di database PostgreSQL.');
+        recommendations.push('Klik tombol "Terapkan Master Data ke Database" di dashboard Admin atau jalankan script npx prisma db push.');
+      }
     }
 
     return {
@@ -406,7 +437,9 @@ export async function testPrismaDatabase(): Promise<{
       database: info.database,
       isPooler: info.isPooler,
       hasDatabaseUrl: true,
-      error: err.message,
+      error: err.message.includes('TIMEOUT_4500MS')
+        ? 'Batas waktu koneksi habis (4.5s). Database tidak dapat dijangkau dari server Vercel.'
+        : err.message,
       timestamp: now,
       warnings,
       recommendations
