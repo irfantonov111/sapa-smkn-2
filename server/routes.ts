@@ -20,6 +20,7 @@ import {
   getReportById,
   createReport,
   updateReportStatus,
+  reassignReport,
   deleteReport,
   addMessage,
   getNotifications,
@@ -33,7 +34,17 @@ import {
   updateUserPassword,
   getMaskedDbInfo,
   getConnectionString,
-  getPool
+  getPool,
+  createStudent,
+  createTeacher,
+  updateUserDetails,
+  deleteUserPermanently,
+  bulkDeleteUsersPermanently,
+  createClass,
+  updateClassDetails,
+  deleteClassPermanently,
+  updateCategoryDetails,
+  deleteCategoryPermanently
 } from './db';
 
 export const apiRouter = Router();
@@ -316,11 +327,113 @@ apiRouter.post('/users/:id/change-password', async (req: Request, res: Response)
   }
 });
 
+// Create student
+apiRouter.post('/users/student', async (req: Request, res: Response) => {
+  try {
+    const { name, email, nis, class_id, password, phone } = req.body;
+    if (!name || !email || !nis || !class_id) {
+      return res.status(400).json({ error: 'Nama, Email, NIS, dan Kelas wajib diisi' });
+    }
+    const result = await createStudent({ name, email, nis, class_id, password, phone });
+    res.status(201).json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create teacher
+apiRouter.post('/users/teacher', async (req: Request, res: Response) => {
+  try {
+    const { name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids } = req.body;
+    if (!name || !email || !nip || !teacher_type) {
+      return res.status(400).json({ error: 'Nama, Email, NIP, dan Peran Guru wajib diisi' });
+    }
+    const result = await createTeacher({
+      name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update user details (PUT & PATCH)
+apiRouter.all(['/users/:id/update', '/users/:id/details'], async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const success = await updateUserDetails(id, req.body);
+    if (!success) {
+      return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
+    }
+    res.json({ success: true, message: 'Pengguna berhasil diperbarui' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete user permanently
+apiRouter.delete('/users/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const success = await deleteUserPermanently(id);
+    res.json({ success, message: 'Pengguna berhasil dihapus permanen' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk delete users
+apiRouter.post('/users/bulk-delete', async (req: Request, res: Response) => {
+  try {
+    const { userIds } = req.body;
+    const count = await bulkDeleteUsersPermanently(userIds || []);
+    res.json({ success: true, count, message: `${count} pengguna berhasil dihapus permanen` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Classes
 apiRouter.get('/classes', async (req: Request, res: Response) => {
   try {
     const classes = await getClasses();
     res.json(classes);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create Class
+apiRouter.post('/classes', async (req: Request, res: Response) => {
+  try {
+    const { name, grade, major, homeroom_teacher_id, bk_teacher_id } = req.body;
+    if (!name || !grade) {
+      return res.status(400).json({ error: 'Nama kelas dan tingkat kelas wajib diisi' });
+    }
+    const newClass = await createClass({ name, grade, major: major || 'Umum', homeroom_teacher_id, bk_teacher_id });
+    res.status(201).json(newClass);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update Class
+apiRouter.put('/classes/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const success = await updateClassDetails(id, req.body);
+    res.json({ success, message: 'Kelas berhasil diperbarui' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Class
+apiRouter.delete('/classes/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const success = await deleteClassPermanently(id);
+    res.json({ success, message: 'Kelas berhasil dihapus' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -369,6 +482,28 @@ apiRouter.post('/categories', async (req: Request, res: Response) => {
       active: true
     });
     res.status(201).json(newCategory);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update Category
+apiRouter.put('/categories/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const success = await updateCategoryDetails(id, req.body);
+    res.json({ success, message: 'Kategori berhasil diperbarui' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Category
+apiRouter.delete('/categories/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const success = await deleteCategoryPermanently(id);
+    res.json({ success, message: 'Kategori berhasil dihapus' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -457,6 +592,21 @@ apiRouter.patch('/reports/:id/status', async (req: Request, res: Response) => {
     }
 
     res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin Reassign Report
+apiRouter.post('/reports/:id/reassign', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { assigned_to, assigned_teacher_id, customNote } = req.body;
+    const success = await reassignReport(id, assigned_to, assigned_teacher_id, customNote);
+    if (!success) {
+      return res.status(404).json({ error: 'Laporan tidak ditemukan' });
+    }
+    res.json({ success: true, message: 'Laporan berhasil dialihkan' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -1343,6 +1343,11 @@ class DatabaseService {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('advocare_notif_change'));
     }
+    this.syncToServer(`/api/reports/${reportId}/reassign`, 'POST', {
+      assigned_to: assignedTo,
+      assigned_teacher_id: assignedTeacherId,
+      customNote
+    });
     return report;
   }
 
@@ -1558,6 +1563,14 @@ class DatabaseService {
     };
     this.state.categories.push(newCat);
     this.saveToStorage();
+    this.notifyListeners();
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer('/api/categories', 'POST', {
+      name: newCat.name,
+      description: newCat.description,
+      icon: newCat.icon,
+      color: newCat.color
+    });
     return newCat;
   }
 
@@ -1566,6 +1579,9 @@ class DatabaseService {
     if (cat) {
       Object.assign(cat, updates);
       this.saveToStorage();
+      this.notifyListeners();
+      // Sync to backend Supabase/PostgreSQL
+      this.syncToServer(`/api/categories/${id}`, 'PUT', updates);
     }
   }
 
@@ -1583,6 +1599,9 @@ class DatabaseService {
     }
     this.state.categories = this.state.categories.filter(c => c.id !== id);
     this.saveToStorage();
+    this.notifyListeners();
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer(`/api/categories/${id}`, 'DELETE');
     return { success: true };
   }
 
@@ -1608,6 +1627,16 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer('/api/classes', 'POST', {
+      name: newClass.name,
+      grade: newClass.grade,
+      major: newClass.major,
+      homeroom_teacher_id: newClass.homeroom_teacher_id,
+      bk_teacher_id: newClass.bk_teacher_id
+    });
+
     return newClass;
   }
 
@@ -1639,6 +1668,9 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer(`/api/classes/${classId}`, 'PUT', updates);
   }
 
   public deleteClass(classId: string): { success: boolean; message?: string } {
@@ -1658,6 +1690,10 @@ class DatabaseService {
     this.state.classes = this.state.classes.filter(c => c.id !== classId);
     this.saveToStorage();
     this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer(`/api/classes/${classId}`, 'DELETE');
+
     return { success: true };
   }
 
@@ -1688,6 +1724,13 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer('/api/classes/assign-bk', 'POST', {
+      teacherId: teacher.id,
+      classIds
+    });
+
     return { success: true };
   }
 
@@ -1700,6 +1743,9 @@ class DatabaseService {
       Object.assign(user, updates);
       this.saveToStorage();
       this.notifyListeners();
+
+      // Sync to backend Supabase/PostgreSQL
+      this.syncToServer(`/api/users/${id}`, 'PUT', updates);
     }
   }
 
@@ -1810,6 +1856,10 @@ class DatabaseService {
     if (student) {
       Object.assign(student, updates);
       this.saveToStorage();
+      this.notifyListeners();
+      if (student.user_id) {
+        this.syncToServer(`/api/users/${student.user_id}/details`, 'PUT', updates);
+      }
     }
   }
 
@@ -1822,6 +1872,9 @@ class DatabaseService {
       Object.assign(teacher, updates);
       this.saveToStorage();
       this.notifyListeners();
+      if (teacher.user_id) {
+        this.syncToServer(`/api/users/${teacher.user_id}/details`, 'PUT', updates);
+      }
     }
   }
 
@@ -1830,6 +1883,8 @@ class DatabaseService {
     if (cls) {
       cls.homeroom_teacher_id = homeroomTeacherId;
       this.saveToStorage();
+      this.notifyListeners();
+      this.syncToServer(`/api/classes/${classId}`, 'PUT', { homeroom_teacher_id: homeroomTeacherId });
     }
   }
 
@@ -1867,6 +1922,17 @@ class DatabaseService {
     }
 
     this.saveToStorage();
+    this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer(`/api/users/${data.userId}/details`, 'PUT', {
+      name: data.name.trim(),
+      email: data.email.trim(),
+      nis: data.nis.trim(),
+      class_id: data.class_id,
+      password: data.password ? data.password.trim() : undefined,
+      homeroom_teacher_id: data.homeroom_teacher_id
+    });
   }
 
   public getUserByIdentifier(identifier: string): User | null {
@@ -1941,6 +2007,10 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer(`/api/users/${userId}`, 'DELETE');
+
     return { success: true };
   }
 
@@ -1974,6 +2044,10 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer('/api/users/bulk-delete', 'POST', { userIds });
+
     return { success: true, count: deletedCount };
   }
 
@@ -2000,6 +2074,16 @@ class DatabaseService {
     this.state.users.push(newUser);
     this.state.students.push(newStudent);
     this.saveToStorage();
+    this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer('/api/users/student', 'POST', {
+      name: data.name,
+      email: data.email,
+      nis: data.nis,
+      class_id: data.class_id,
+      password: defaultPass
+    });
   }
 
   public addTeacher(data: {
@@ -2049,6 +2133,22 @@ class DatabaseService {
     }
 
     this.saveToStorage();
+    this.notifyListeners();
+
+    // Sync to backend Supabase/PostgreSQL
+    this.syncToServer('/api/users/teacher', 'POST', {
+      name: data.name.trim(),
+      email: data.email.trim(),
+      nip: data.nip.trim(),
+      teacher_type: data.teacher_type,
+      phone: data.phone?.trim() || '',
+      specialization: data.specialization?.trim(),
+      room: data.room?.trim(),
+      bio: data.bio?.trim(),
+      available_hours: data.available_hours?.trim(),
+      managed_class_id: data.managed_class_id
+    });
+
     return { user: newUser, teacher: newTeacher };
   }
 

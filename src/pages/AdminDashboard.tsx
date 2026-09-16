@@ -65,8 +65,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     recommendations?: string[];
     counts?: { users: number; classes: number; teachers: number; students: number; reports: number };
   } | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
   const [isTestingDb, setIsTestingDb] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
@@ -127,28 +125,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const reports = rawTables.reports;
   const messages = rawTables.messages;
 
-  // Sync state from Supabase / Backend API
-  const handleSyncFromSupabase = async () => {
-    setIsSyncing(true);
-    setResetMessage('');
-    try {
-      const result = await db.syncFromBackend();
-      await loadServerStatus();
-      handleRefresh();
-      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      if (result.success) {
-        setResetMessage(`Sinkronisasi berhasil! Data termutakhir telah dimuat.`);
-      } else {
-        setResetMessage(`Info: ${result.message || 'Menggunakan data lokal saat ini.'}`);
-      }
-    } catch (err: any) {
-      setResetMessage(`Gagal sinkronisasi: ${err.message}`);
-    } finally {
-      setIsSyncing(false);
-      setTimeout(() => setResetMessage(''), 5000);
-    }
-  };
-
   // Actively test live connection between backend (Vercel) and database provider (Supabase)
   const handleTestDatabase = async () => {
     setIsTestingDb(true);
@@ -171,40 +147,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Seed Supabase with master dataset directly
-  const handleSeedSupabase = async () => {
-    if (!confirm('Apakah Anda ingin menginisialisasi seluruh master dataset (33 Kelas, 43 Guru, 1.122 Siswa) langsung ke database Supabase Anda? Proses ini memerlukan waktu 2-3 detik.')) {
-      return;
-    }
-    setIsSeeding(true);
-    setResetMessage('');
-    try {
-      const res = await db.seedSupabase();
-      await loadServerStatus();
-      handleRefresh();
-      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      if (res.success) {
-        setResetMessage('Berhasil! Seluruh 33 Kelas, 43 Guru, dan 1.122 Siswa kini telah tersimpan di Supabase.');
-      } else {
-        setResetMessage(`Gagal inisialisasi Supabase: ${res.message}`);
-      }
-    } catch (err: any) {
-      setResetMessage(`Error: ${err.message}`);
-    } finally {
-      setIsSeeding(false);
-      setTimeout(() => setResetMessage(''), 6000);
-    }
-  };
-
-  const handleResetData = () => {
-    if (confirm('Apakah Anda yakin ingin menyinkronkan ulang database ke dataset master sekolah?')) {
-      db.resetToDefaults();
-      handleRefresh();
-      setResetMessage('Database lokal berhasil disinkronkan ke dataset master sekolah.');
-      setTimeout(() => setResetMessage(''), 4000);
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -215,7 +157,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <span>Panel Administrator SAPA</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Kelola data master pengguna, 108 siswa, 10 guru BK, 3 wali kelas, kategori, dan seluruh laporan pengaduan.
+            Database tersambung langsung ke Supabase. Seluruh perubahan akun pengguna, kelas, guru, dan pengaduan langsung tersimpan di cloud.
           </p>
         </div>
 
@@ -232,22 +174,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={handleSyncFromSupabase}
-            disabled={isSyncing}
+            onClick={handleTestDatabase}
+            disabled={isTestingDb}
             className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
-            title="Tarik data terkini dari Supabase ke aplikasi"
+            title="Uji koneksi langsung ke database Supabase"
           >
-            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan dari Supabase'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleResetData}
-            className="px-4 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer"
-          >
-            <Database className="w-4 h-4 text-slate-500" />
-            <span>Reset Lokal</span>
+            <Activity className={`w-4 h-4 ${isTestingDb ? 'animate-spin' : ''}`} />
+            <span>{isTestingDb ? 'Memeriksa...' : 'Periksa Status Supabase'}</span>
           </button>
         </div>
       </div>
@@ -308,34 +241,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               onClick={handleTestDatabase}
               disabled={isTestingDb}
               className="px-3.5 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50 shadow-xs cursor-pointer"
-              title="Uji koneksi end-to-end dari backend Vercel ke database Anda via Prisma"
+              title="Uji koneksi langsung dari backend ke database Supabase via Prisma"
             >
               <Activity className={`w-3.5 h-3.5 ${isTestingDb ? 'animate-spin' : ''}`} />
-              <span>{isTestingDb ? 'Menguji Koneksi...' : 'Uji Koneksi Backend'}</span>
+              <span>{isTestingDb ? 'Menguji Koneksi...' : 'Uji Koneksi Supabase'}</span>
             </button>
-
-            <button
-              type="button"
-              onClick={handleSyncFromSupabase}
-              disabled={isSyncing}
-              className="px-3.5 py-2 rounded-xl bg-purple-50 text-purple-700 hover:bg-purple-100 text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50 border border-purple-200/60 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>Sinkronkan Data</span>
-            </button>
-
-            {(testResult?.success || serverStatus?.isPostgres) && (
-              <button
-                type="button"
-                onClick={handleSeedSupabase}
-                disabled={isSeeding}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50 shadow-xs cursor-pointer"
-                title="Tulis ulang master data (33 Kelas, 43 Guru, 1.122 Siswa) ke database"
-              >
-                <Database className="w-3.5 h-3.5" />
-                <span>{isSeeding ? 'Mengimpor...' : 'Terapkan Master Data'}</span>
-              </button>
-            )}
 
             <button
               type="button"

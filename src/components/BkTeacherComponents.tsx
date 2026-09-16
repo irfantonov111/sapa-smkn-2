@@ -13,7 +13,9 @@ import {
   X,
   Phone,
   Mail,
-  CalendarCheck
+  CalendarCheck,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { BkTeacherProfile } from '../types/database';
 
@@ -31,6 +33,7 @@ export const BkTeachersDashboardSection: React.FC<BkTeachersListProps> = ({
   className
 }) => {
   const [activeModalTeacher, setActiveModalTeacher] = useState<BkTeacherProfile | null>(null);
+  const [showNip, setShowNip] = useState<boolean>(false);
 
   // Put class BK teacher first if available
   const sortedTeachers = [...teachers].sort((a, b) => {
@@ -58,9 +61,22 @@ export const BkTeachersDashboardSection: React.FC<BkTeachersListProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80 self-start sm:self-auto">
-          <Shield className="w-3.5 h-3.5 text-blue-600" />
-          <span className="font-semibold">Privasi 100% Terlindungi</span>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setShowNip(prev => !prev)}
+            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 px-2.5 py-1.5 rounded-xl border border-slate-200 transition cursor-pointer"
+            title={showNip ? 'Sembunyikan NIP Guru' : 'Tampilkan NIP Guru'}
+          >
+            {showNip ? <EyeOff className="w-3.5 h-3.5 text-blue-600" /> : <Eye className="w-3.5 h-3.5 text-slate-500" />}
+            <span className="font-medium">{showNip ? 'Sembunyikan NIP' : 'Tampilkan NIP'}</span>
+          </button>
+
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80">
+            <Shield className="w-3.5 h-3.5 text-blue-600" />
+            <span className="font-semibold hidden sm:inline">Privasi 100% Terlindungi</span>
+            <span className="font-semibold sm:hidden">Privasi Aman</span>
+          </div>
         </div>
       </div>
 
@@ -105,11 +121,15 @@ export const BkTeachersDashboardSection: React.FC<BkTeachersListProps> = ({
                         <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-blue-600 text-white">
                           Guru BK Kelas Anda
                         </span>
+                      ) : showNip ? (
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded break-all max-w-[150px] sm:max-w-none truncate" title={`NIP: ${t.nip}`}>
+                          NIP: {t.nip}
+                        </span>
                       ) : (
-                        <span className="text-[10px] font-mono text-slate-400">NIP: {t.nip}</span>
+                        <span className="text-[10px] font-medium text-slate-400 italic">Guru BK</span>
                       )}
                       <span
-                        className={`text-[10px] font-semibold px-1.5 py-0.2 rounded-md ${
+                        className={`text-[10px] font-semibold px-1.5 py-0.2 rounded-md shrink-0 ${
                           isAvailable
                             ? 'text-emerald-700 bg-emerald-100/80'
                             : 'text-slate-600 bg-slate-200'
@@ -118,6 +138,13 @@ export const BkTeachersDashboardSection: React.FC<BkTeachersListProps> = ({
                         {isAvailable ? 'Tersedia' : 'Tidak Aktif'}
                       </span>
                     </div>
+                    {isClassTeacher && showNip && (
+                      <div className="mt-0.5">
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded break-all max-w-[150px] sm:max-w-none truncate inline-block" title={`NIP: ${t.nip}`}>
+                          NIP: {t.nip}
+                        </span>
+                      </div>
+                    )}
                     <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-blue-700 transition-colors line-clamp-1 mt-1">
                       {t.name}
                     </h3>
@@ -201,8 +228,25 @@ export const BkTeachersDashboardSection: React.FC<BkTeachersListProps> = ({
                 referrerPolicy="no-referrer"
                 className="w-16 h-16 rounded-2xl object-cover border-2 border-blue-100 shrink-0"
               />
-              <div>
-                <span className="text-xs font-mono text-slate-400 block">NIP: {activeModalTeacher.nip}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  {showNip ? (
+                    <span className="text-xs font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded break-all max-w-full">
+                      NIP: {activeModalTeacher.nip}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-medium text-slate-400 italic">
+                      NIP Tersembunyi
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowNip(prev => !prev)}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                  >
+                    {showNip ? 'Sembunyikan' : 'Tampilkan NIP'}
+                  </button>
+                </div>
                 <h3 className="text-base sm:text-lg font-bold text-slate-900">
                   {activeModalTeacher.name}
                 </h3>

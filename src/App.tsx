@@ -17,6 +17,7 @@ import { TeacherMoodCheckPage } from './pages/TeacherMoodCheckPage';
 import { FirstTimePasswordModal } from './components/FirstTimePasswordModal';
 import { MobileDrawer } from './components/MobileDrawer';
 import { Shield } from 'lucide-react';
+import { db } from './services/db';
 
 const MainApp: React.FC = () => {
   const { currentUser, isInitialized } = useAuth();
@@ -24,6 +25,13 @@ const MainApp: React.FC = () => {
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [preselectedTeacherId, setPreselectedTeacherId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+
+  // Background synchronization on app load
+  useEffect(() => {
+    db.syncFromBackend().catch(err => {
+      console.warn('[App] Background sync note:', err);
+    });
+  }, []);
 
   // If already logged in and on landing/login, default to dashboard
   const handleNavigate = (tab: string, reportId?: string, extraParam?: string) => {

@@ -1191,6 +1191,57 @@ export async function updateReportStatus(
   }
 }
 
+export async function reassignReport(
+  reportId: string,
+  assignedTo: 'guru_bk' | 'wali_kelas',
+  assignedTeacherId: string,
+  customNote?: string
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  const historyId = `h-reassign-${Date.now()}`;
+
+  if (isPostgresConnected && pool) {
+    const updateRes = await pool.query(
+      `UPDATE reports
+       SET assigned_to = $1, assigned_teacher_id = $2, updated_at = $3
+       WHERE id = $4 RETURNING *`,
+      [assignedTo, assignedTeacherId, now, reportId]
+    );
+    if (updateRes.rows.length === 0) return false;
+
+    await pool.query(
+      `INSERT INTO report_status_history (id, report_id, status, changed_by, note, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        historyId,
+        reportId,
+        updateRes.rows[0].status || 'dibaca',
+        'admin',
+        customNote || `Penanganan laporan dialihkan ke ${assignedTo === 'guru_bk' ? 'Guru BK' : 'Wali Kelas'}`,
+        now
+      ]
+    );
+    return true;
+  } else {
+    const report = memoryStore.reports.find(r => r.id === reportId);
+    if (!report) return false;
+
+    report.assigned_to = assignedTo;
+    report.assigned_teacher_id = assignedTeacherId;
+    report.updated_at = now;
+
+    memoryStore.status_history.push({
+      id: historyId,
+      report_id: reportId,
+      status: report.status,
+      changed_by: 'admin',
+      note: customNote || `Penanganan laporan dialihkan ke ${assignedTo === 'guru_bk' ? 'Guru BK' : 'Wali Kelas'}`,
+      created_at: now
+    });
+    return true;
+  }
+}
+
 export async function deleteReport(reportId: string): Promise<boolean> {
   if (isPostgresConnected && pool) {
     await pool.query('DELETE FROM messages WHERE report_id = $1', [reportId]);
@@ -1391,5 +1442,452 @@ export async function getBkTeachers(): Promise<BkTeacherProfile[]> {
       assigned_class_ids: t.assigned_class_ids || []
     };
   });
+}
+
+// ==========================================
+// --- FULL CRUD BACKEND OPERATIONS ---
+// ==========================================
+
+export async function createStudent(data: {
+  name: string;
+  email: string;
+  nis: string;
+  class_id: string;
+  password?: string;
+  phone?: string;
+}): Promise<{ user: User; student: Student }> {
+  const userId = `usr-s-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const studentId = `std-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const defaultPass = data.password || `siswa${data.nis.slice(-4)}`;
+  const hashedPassword = hashPassword(defaultPass);
+
+  const newUser: User = {
+    id: userId,
+    name: data.name.trim(),
+    email: data.email.trim(),
+    role: 'siswa',
+    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name.trim())}`,
+    phone: data.phone || '',
+    password: hashedPassword,
+    password_changed: false,
+    created_at: new Date().toISOString()
+  };
+
+  const newStudent: Student = {
+    id: studentId,
+    user_id: userId,
+    nis: data.nis.trim(),
+    class_id: data.class_id,
+    created_at: new Date().toISOString()
+  };
+
+  if (isPostgresConnected && pool) {
+    await pool.query(
+      `INSERT INTO users (id, name, email, password, role, avatar, phone, password_changed, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, phone = $7`,
+      [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.avatar, newUser.phone, newUser.password_changed]
+    );
+
+    await pool.query(
+      `INSERT INTO students (id, user_id, nis, class_id, created_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET nis = $3, class_id = $4`,
+      [newStudent.id, newStudent.user_id, newStudent.nis, newStudent.class_id]
+    );
+  }
+
+  memoryStore.users.push(newUser);
+  memoryStore.students.push(newStudent);
+
+  return { user: newUser, student: newStudent };
+}
+
+export async function createTeacher(data: {
+  name: string;
+  email: string;
+  nip: string;
+  teacher_type: 'guru_bk' | 'wali_kelas';
+  phone?: string;
+  specialization?: string;
+  room?: string;
+  bio?: string;
+  available_hours?: string;
+  managed_class_id?: string;
+  assigned_class_ids?: string[];
+}): Promise<{ user: User; teacher: Teacher }> {
+  const userId = `usr-t-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const teacherId = `tch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const hashedPassword = hashPassword('guru123');
+
+  const newUser: User = {
+    id: userId,
+    name: data.name.trim(),
+    email: data.email.trim(),
+    role: 'guru',
+    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name.trim())}`,
+    phone: data.phone || '',
+    password: hashedPassword,
+    password_changed: false,
+    created_at: new Date().toISOString()
+  };
+
+  const newTeacher: Teacher = {
+    id: teacherId,
+    user_id: userId,
+    nip: data.nip.trim(),
+    teacher_type: data.teacher_type,
+    specialization: data.specialization || (data.teacher_type === 'guru_bk' ? 'Konseling Umum' : 'Wali Kelas'),
+    room: data.room || (data.teacher_type === 'guru_bk' ? 'Ruang BK' : 'Ruang Guru'),
+    bio: data.bio || 'Pendidik siap mendampingi siswa.',
+    available_hours: data.available_hours || 'Senin - Jumat 07.30 - 15.00 WIB',
+    is_active: true,
+    assigned_class_ids: data.assigned_class_ids || [],
+    created_at: new Date().toISOString()
+  };
+
+  if (isPostgresConnected && pool) {
+    await pool.query(
+      `INSERT INTO users (id, name, email, password, role, avatar, phone, password_changed, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, phone = $7`,
+      [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.avatar, newUser.phone, newUser.password_changed]
+    );
+
+    await pool.query(
+      `INSERT INTO teachers (id, user_id, nip, teacher_type, specialization, room, bio, available_hours, is_active, assigned_class_ids, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET nip = $3, teacher_type = $4, specialization = $5, room = $6, bio = $7, available_hours = $8, assigned_class_ids = $10`,
+      [
+        newTeacher.id,
+        newTeacher.user_id,
+        newTeacher.nip,
+        newTeacher.teacher_type,
+        newTeacher.specialization,
+        newTeacher.room,
+        newTeacher.bio,
+        newTeacher.available_hours,
+        newTeacher.is_active,
+        JSON.stringify(newTeacher.assigned_class_ids)
+      ]
+    );
+
+    if (data.teacher_type === 'wali_kelas' && data.managed_class_id) {
+      await pool.query('UPDATE classes SET homeroom_teacher_id = $1 WHERE id = $2', [newTeacher.id, data.managed_class_id]);
+    }
+  }
+
+  memoryStore.users.push(newUser);
+  memoryStore.teachers.push(newTeacher);
+
+  if (data.teacher_type === 'wali_kelas' && data.managed_class_id) {
+    const cls = memoryStore.classes.find(c => c.id === data.managed_class_id);
+    if (cls) cls.homeroom_teacher_id = newTeacher.id;
+  }
+
+  return { user: newUser, teacher: newTeacher };
+}
+
+export async function updateUserDetails(userId: string, data: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  nis?: string;
+  class_id?: string;
+  nip?: string;
+  specialization?: string;
+  room?: string;
+  bio?: string;
+  available_hours?: string;
+  managed_class_id?: string;
+  assigned_class_ids?: string[];
+  homeroom_teacher_id?: string;
+}): Promise<boolean> {
+  const user = await getUserById(userId);
+  if (!user) return false;
+
+  const updates: any = {};
+  if (data.name !== undefined) updates.name = data.name.trim();
+  if (data.email !== undefined) updates.email = data.email.trim();
+  if (data.phone !== undefined) updates.phone = data.phone.trim();
+  if (data.password && data.password.trim()) {
+    updates.password = hashPassword(data.password.trim());
+    updates.password_changed = false;
+  }
+
+  if (isPostgresConnected && pool) {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (updates.name !== undefined) { fields.push(`name = $${idx++}`); values.push(updates.name); }
+    if (updates.email !== undefined) { fields.push(`email = $${idx++}`); values.push(updates.email); }
+    if (updates.phone !== undefined) { fields.push(`phone = $${idx++}`); values.push(updates.phone); }
+    if (updates.password !== undefined) {
+      fields.push(`password = $${idx++}`); values.push(updates.password);
+      fields.push(`password_changed = $${idx++}`); values.push(false);
+    }
+
+    if (fields.length > 0) {
+      values.push(userId);
+      await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    }
+
+    // Student updates
+    if (user.role === 'siswa') {
+      const sFields: string[] = [];
+      const sValues: any[] = [];
+      let sIdx = 1;
+
+      if (data.nis !== undefined) { sFields.push(`nis = $${sIdx++}`); sValues.push(data.nis.trim()); }
+      if (data.class_id !== undefined) { sFields.push(`class_id = $${sIdx++}`); sValues.push(data.class_id); }
+
+      if (sFields.length > 0) {
+        sValues.push(userId);
+        await pool.query(`UPDATE students SET ${sFields.join(', ')} WHERE user_id = $${sIdx}`, sValues);
+      }
+
+      if (data.class_id && data.homeroom_teacher_id !== undefined) {
+        await pool.query('UPDATE classes SET homeroom_teacher_id = $1 WHERE id = $2', [data.homeroom_teacher_id || null, data.class_id]);
+      }
+    }
+
+    // Teacher updates
+    if (user.role === 'guru') {
+      const tFields: string[] = [];
+      const tValues: any[] = [];
+      let tIdx = 1;
+
+      if (data.nip !== undefined) { tFields.push(`nip = $${tIdx++}`); tValues.push(data.nip.trim()); }
+      if (data.specialization !== undefined) { tFields.push(`specialization = $${tIdx++}`); tValues.push(data.specialization.trim()); }
+      if (data.room !== undefined) { tFields.push(`room = $${tIdx++}`); tValues.push(data.room.trim()); }
+      if (data.bio !== undefined) { tFields.push(`bio = $${tIdx++}`); tValues.push(data.bio.trim()); }
+      if (data.available_hours !== undefined) { tFields.push(`available_hours = $${tIdx++}`); tValues.push(data.available_hours.trim()); }
+      if (data.assigned_class_ids !== undefined) {
+        tFields.push(`assigned_class_ids = $${tIdx++}`);
+        tValues.push(JSON.stringify(data.assigned_class_ids));
+      }
+
+      if (tFields.length > 0) {
+        tValues.push(userId);
+        await pool.query(`UPDATE teachers SET ${tFields.join(', ')} WHERE user_id = $${tIdx}`, tValues);
+      }
+
+      // Update managed class if wali_kelas
+      const teacherRes = await pool.query('SELECT id, teacher_type FROM teachers WHERE user_id = $1', [userId]);
+      const teacher = teacherRes.rows[0];
+      if (teacher && teacher.teacher_type === 'wali_kelas' && data.managed_class_id !== undefined) {
+        await pool.query('UPDATE classes SET homeroom_teacher_id = NULL WHERE homeroom_teacher_id = $1', [teacher.id]);
+        if (data.managed_class_id) {
+          await pool.query('UPDATE classes SET homeroom_teacher_id = $1 WHERE id = $2', [teacher.id, data.managed_class_id]);
+        }
+      }
+    }
+  }
+
+  // Update in memoryStore as well
+  const memUser = memoryStore.users.find(u => u.id === userId);
+  if (memUser) {
+    if (updates.name !== undefined) memUser.name = updates.name;
+    if (updates.email !== undefined) memUser.email = updates.email;
+    if (updates.phone !== undefined) memUser.phone = updates.phone;
+    if (updates.password !== undefined) {
+      memUser.password = updates.password;
+      memUser.password_changed = false;
+    }
+  }
+
+  if (user.role === 'siswa') {
+    const memStudent = memoryStore.students.find(s => s.user_id === userId);
+    if (memStudent) {
+      if (data.nis !== undefined) memStudent.nis = data.nis.trim();
+      if (data.class_id !== undefined) memStudent.class_id = data.class_id;
+    }
+    if (data.class_id && data.homeroom_teacher_id !== undefined) {
+      const cls = memoryStore.classes.find(c => c.id === data.class_id);
+      if (cls) cls.homeroom_teacher_id = data.homeroom_teacher_id || null;
+    }
+  }
+
+  if (user.role === 'guru') {
+    const memTeacher = memoryStore.teachers.find(t => t.user_id === userId);
+    if (memTeacher) {
+      if (data.nip !== undefined) memTeacher.nip = data.nip.trim();
+      if (data.specialization !== undefined) memTeacher.specialization = data.specialization.trim();
+      if (data.room !== undefined) memTeacher.room = data.room.trim();
+      if (data.bio !== undefined) memTeacher.bio = data.bio.trim();
+      if (data.available_hours !== undefined) memTeacher.available_hours = data.available_hours.trim();
+      if (data.assigned_class_ids !== undefined) memTeacher.assigned_class_ids = [...data.assigned_class_ids];
+
+      if (memTeacher.teacher_type === 'wali_kelas' && data.managed_class_id !== undefined) {
+        memoryStore.classes.forEach(c => {
+          if (c.homeroom_teacher_id === memTeacher.id && c.id !== data.managed_class_id) {
+            c.homeroom_teacher_id = null;
+          }
+        });
+        if (data.managed_class_id) {
+          const cls = memoryStore.classes.find(c => c.id === data.managed_class_id);
+          if (cls) cls.homeroom_teacher_id = memTeacher.id;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
+export async function deleteUserPermanently(userId: string): Promise<boolean> {
+  if (isPostgresConnected && pool) {
+    // 1. Get teacher id if any to unlink from classes
+    const tRes = await pool.query('SELECT id FROM teachers WHERE user_id = $1', [userId]);
+    const teacherId = tRes.rows[0]?.id;
+
+    if (teacherId) {
+      await pool.query('UPDATE classes SET homeroom_teacher_id = NULL WHERE homeroom_teacher_id = $1', [teacherId]);
+      await pool.query('UPDATE classes SET bk_teacher_id = NULL WHERE bk_teacher_id = $1', [teacherId]);
+    }
+
+    // 2. Delete related records
+    await pool.query('DELETE FROM notifications WHERE user_id = $1', [userId]);
+    await pool.query('DELETE FROM students WHERE user_id = $1', [userId]);
+    await pool.query('DELETE FROM teachers WHERE user_id = $1', [userId]);
+    await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+  }
+
+  // Update memoryStore
+  const teacher = memoryStore.teachers.find(t => t.user_id === userId);
+  if (teacher) {
+    memoryStore.classes.forEach(c => {
+      if (c.homeroom_teacher_id === teacher.id) c.homeroom_teacher_id = null;
+      if (c.bk_teacher_id === teacher.id || c.bk_teacher_id === teacher.user_id) c.bk_teacher_id = undefined;
+    });
+    memoryStore.teachers = memoryStore.teachers.filter(t => t.id !== teacher.id);
+  }
+
+  memoryStore.students = memoryStore.students.filter(s => s.user_id !== userId);
+  memoryStore.users = memoryStore.users.filter(u => u.id !== userId);
+  memoryStore.notifications = memoryStore.notifications.filter(n => n.user_id !== userId);
+
+  return true;
+}
+
+export async function bulkDeleteUsersPermanently(userIds: string[]): Promise<number> {
+  if (!userIds || userIds.length === 0) return 0;
+  let count = 0;
+  for (const uid of userIds) {
+    const ok = await deleteUserPermanently(uid);
+    if (ok) count++;
+  }
+  return count;
+}
+
+// --- CLASS CRUD ---
+export async function createClass(data: {
+  name: string;
+  grade: string;
+  major: string;
+  homeroom_teacher_id?: string | null;
+  bk_teacher_id?: string;
+}): Promise<SchoolClass> {
+  const newClass: SchoolClass = {
+    id: `cls-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    name: data.name.trim(),
+    grade: data.grade,
+    major: data.major.trim() || 'Umum',
+    homeroom_teacher_id: data.homeroom_teacher_id || null,
+    bk_teacher_id: data.bk_teacher_id || undefined
+  };
+
+  if (isPostgresConnected && pool) {
+    await pool.query(
+      `INSERT INTO classes (id, name, grade, major, homeroom_teacher_id, bk_teacher_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [newClass.id, newClass.name, newClass.grade, newClass.major, newClass.homeroom_teacher_id, newClass.bk_teacher_id]
+    );
+
+    if (newClass.bk_teacher_id) {
+      const tRes = await pool.query('SELECT assigned_class_ids FROM teachers WHERE id = $1 OR user_id = $1', [newClass.bk_teacher_id]);
+      if (tRes.rows[0]) {
+        let assigned = tRes.rows[0].assigned_class_ids;
+        if (typeof assigned === 'string') assigned = JSON.parse(assigned);
+        if (!Array.isArray(assigned)) assigned = [];
+        if (!assigned.includes(newClass.id)) {
+          assigned.push(newClass.id);
+          await pool.query('UPDATE teachers SET assigned_class_ids = $1 WHERE id = $2 OR user_id = $2', [JSON.stringify(assigned), newClass.bk_teacher_id]);
+        }
+      }
+    }
+  }
+
+  memoryStore.classes.push(newClass);
+  return newClass;
+}
+
+export async function updateClassDetails(classId: string, data: Partial<SchoolClass>): Promise<boolean> {
+  if (isPostgresConnected && pool) {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (data.name !== undefined) { fields.push(`name = $${idx++}`); values.push(data.name.trim()); }
+    if (data.grade !== undefined) { fields.push(`grade = $${idx++}`); values.push(data.grade); }
+    if (data.major !== undefined) { fields.push(`major = $${idx++}`); values.push(data.major.trim()); }
+    if (data.homeroom_teacher_id !== undefined) { fields.push(`homeroom_teacher_id = $${idx++}`); values.push(data.homeroom_teacher_id || null); }
+    if (data.bk_teacher_id !== undefined) { fields.push(`bk_teacher_id = $${idx++}`); values.push(data.bk_teacher_id || null); }
+
+    if (fields.length > 0) {
+      values.push(classId);
+      await pool.query(`UPDATE classes SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    }
+  }
+
+  const cls = memoryStore.classes.find(c => c.id === classId);
+  if (cls) {
+    Object.assign(cls, data);
+  }
+  return true;
+}
+
+export async function deleteClassPermanently(classId: string): Promise<boolean> {
+  if (isPostgresConnected && pool) {
+    await pool.query('DELETE FROM classes WHERE id = $1', [classId]);
+  }
+  memoryStore.classes = memoryStore.classes.filter(c => c.id !== classId);
+  return true;
+}
+
+// --- CATEGORY CRUD ---
+export async function updateCategoryDetails(categoryId: string, data: Partial<Category>): Promise<boolean> {
+  if (isPostgresConnected && pool) {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (data.name !== undefined) { fields.push(`name = $${idx++}`); values.push(data.name.trim()); }
+    if (data.description !== undefined) { fields.push(`description = $${idx++}`); values.push(data.description.trim()); }
+    if (data.icon !== undefined) { fields.push(`icon = $${idx++}`); values.push(data.icon); }
+    if (data.color !== undefined) { fields.push(`color = $${idx++}`); values.push(data.color); }
+    if (data.active !== undefined) { fields.push(`active = $${idx++}`); values.push(data.active); }
+
+    if (fields.length > 0) {
+      values.push(categoryId);
+      await pool.query(`UPDATE categories SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    }
+  }
+
+  const cat = memoryStore.categories.find(c => c.id === categoryId);
+  if (cat) {
+    Object.assign(cat, data);
+  }
+  return true;
+}
+
+export async function deleteCategoryPermanently(categoryId: string): Promise<boolean> {
+  if (isPostgresConnected && pool) {
+    await pool.query('DELETE FROM categories WHERE id = $1', [categoryId]);
+  }
+  memoryStore.categories = memoryStore.categories.filter(c => c.id !== categoryId);
+  return true;
 }
 
