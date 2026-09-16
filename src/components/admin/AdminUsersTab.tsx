@@ -1827,7 +1827,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           const userWali = users.find(u => u.id === t.user_id);
                           return (
                             <option key={t.id} value={t.id}>
-                              {userWali?.name || 'Wali Kelas'} (NIP: {t.nip})
+                              {userWali?.name || 'Wali Kelas'} (NIP: {decryptNip(t.nip)})
                             </option>
                           );
                         })}

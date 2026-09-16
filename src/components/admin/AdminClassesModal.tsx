@@ -372,7 +372,7 @@ export const AdminClassesModal: React.FC<AdminClassesModalProps> = ({
                           const u = users.find(usr => usr.id === t.user_id);
                           return (
                             <option key={t.id} value={t.id}>
-                              {u?.name || 'Wali Kelas'} (NIP: {maskNip(decryptNip(t.nip))})
+                              {u?.name || 'Wali Kelas'} (NIP: {decryptNip(t.nip)})
                             </option>
                           );
                         })}
@@ -497,7 +497,7 @@ export const AdminClassesModal: React.FC<AdminClassesModalProps> = ({
                           const u = users.find(usr => usr.id === t.user_id);
                           return (
                             <option key={t.id} value={t.id}>
-                              {u?.name || 'Wali Kelas'} (NIP: {maskNip(decryptNip(t.nip))})
+                              {u?.name || 'Wali Kelas'} (NIP: {decryptNip(t.nip)})
                             </option>
                           );
                         })}
@@ -781,7 +781,7 @@ export const AdminClassesModal: React.FC<AdminClassesModalProps> = ({
                               {teacherUser?.name}
                             </h4>
                             <p className="text-[11px] text-slate-400 font-mono">
-                              NIP: {maskNip(decryptNip(teacher.nip))}
+                              NIP: {decryptNip(teacher.nip)}
                             </p>
                           </div>
                         </div>

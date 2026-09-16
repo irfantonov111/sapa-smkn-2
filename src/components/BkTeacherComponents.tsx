@@ -18,6 +18,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { BkTeacherProfile } from '../types/database';
+import { decryptNip } from '../utils/nipCrypto';
 
 interface BkTeachersListProps {
   teachers: BkTeacherProfile[];
@@ -122,8 +123,8 @@ export const BkTeachersDashboardSection: React.FC<BkTeachersListProps> = ({
                           Guru BK Kelas Anda
                         </span>
                       ) : showNip ? (
-                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded break-all max-w-[150px] sm:max-w-none truncate" title={`NIP: ${t.nip}`}>
-                          NIP: {t.nip}
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded break-all max-w-[150px] sm:max-w-none truncate" title={`NIP: ${decryptNip(t.nip)}`}>
+                          NIP: {decryptNip(t.nip)}
                         </span>
                       ) : (
                         <span className="text-[10px] font-medium text-slate-400 italic">Guru BK</span>
@@ -140,8 +141,8 @@ export const BkTeachersDashboardSection: React.FC<BkTeachersListProps> = ({
                     </div>
                     {isClassTeacher && showNip && (
                       <div className="mt-0.5">
-                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded break-all max-w-[150px] sm:max-w-none truncate inline-block" title={`NIP: ${t.nip}`}>
-                          NIP: {t.nip}
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded break-all max-w-[150px] sm:max-w-none truncate inline-block" title={`NIP: ${decryptNip(t.nip)}`}>
+                          NIP: {decryptNip(t.nip)}
                         </span>
                       </div>
                     )}
@@ -232,7 +233,7 @@ export const BkTeachersDashboardSection: React.FC<BkTeachersListProps> = ({
                 <div className="flex items-center gap-2 flex-wrap mb-0.5">
                   {showNip ? (
                     <span className="text-xs font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded break-all max-w-full">
-                      NIP: {activeModalTeacher.nip}
+                      NIP: {decryptNip(activeModalTeacher.nip)}
                     </span>
                   ) : (
                     <span className="text-xs font-medium text-slate-400 italic">

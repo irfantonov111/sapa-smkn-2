@@ -32,6 +32,7 @@ import { db } from '../services/db';
 import { AdminUsersTab } from '../components/admin/AdminUsersTab';
 import { AdminCategoriesTab } from '../components/admin/AdminCategoriesTab';
 import { AdminReportsTab } from '../components/admin/AdminReportsTab';
+import { exportReportsToExcel } from '../utils/exportReportsExcel';
 
 interface AdminDashboardProps {
   onNavigate: (tab: string, reportId?: string) => void;
@@ -125,6 +126,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const reports = rawTables.reports;
   const messages = rawTables.messages;
 
+  const [isExportingReports, setIsExportingReports] = useState(false);
+
+  const handleExportReports = () => {
+    if (!currentUser) return;
+    setIsExportingReports(true);
+    try {
+      const allReports = db.getReports(currentUser);
+      if (!allReports || allReports.length === 0) {
+        setResetMessage('Belum ada data laporan pengaduan yang dapat diekspor.');
+        return;
+      }
+      exportReportsToExcel(allReports, 'Data_Laporan_Pengaduan_SAPA_Lengkap');
+      setResetMessage(`Berhasil mengekspor ${allReports.length} data laporan pengaduan lengkap ke format Excel (.xlsx).`);
+    } catch (err: any) {
+      setResetMessage(`Gagal mengekspor data laporan: ${err?.message || 'Terjadi kesalahan'}`);
+    } finally {
+      setIsExportingReports(false);
+    }
+  };
+
   // Actively test live connection between backend (Vercel) and database provider (Supabase)
   const handleTestDatabase = async () => {
     setIsTestingDb(true);
@@ -162,25 +183,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          <a
-            href="/Daftar_Akun_Pengguna_SAPA_Lengkap.xlsx"
-            download="Daftar_Akun_Pengguna_SAPA_Lengkap.xlsx"
-            className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer"
-            title="Unduh seluruh data pengguna (1.122 Siswa, 10 Guru BK, 33 Wali Kelas, 2 Admin) lengkap dengan username & kata sandi"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export Excel (.xlsx)</span>
-          </a>
-
           <button
             type="button"
-            onClick={handleTestDatabase}
-            disabled={isTestingDb}
-            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
-            title="Uji koneksi langsung ke database Supabase"
+            onClick={handleExportReports}
+            disabled={isExportingReports}
+            className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+            title="Ekspor seluruh data laporan pengaduan siswa lengkap dari Kode, Tanggal, Judul & Kategori, Pelapor, Urgensi, Guru Pembimbing, hingga Status ke Excel (.xlsx)"
           >
-            <Activity className={`w-4 h-4 ${isTestingDb ? 'animate-spin' : ''}`} />
-            <span>{isTestingDb ? 'Memeriksa...' : 'Periksa Status Supabase'}</span>
+            <Download className={`w-4 h-4 ${isExportingReports ? 'animate-spin' : ''}`} />
+            <span>{isExportingReports ? 'Mengekspor Laporan...' : 'Export Data Laporan (.xlsx)'}</span>
           </button>
         </div>
       </div>
@@ -241,10 +252,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               onClick={handleTestDatabase}
               disabled={isTestingDb}
               className="px-3.5 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50 shadow-xs cursor-pointer"
-              title="Uji koneksi langsung dari backend ke database Supabase via Prisma"
+              title="Uji koneksi langsung dari backend ke database via Prisma"
             >
               <Activity className={`w-3.5 h-3.5 ${isTestingDb ? 'animate-spin' : ''}`} />
-              <span>{isTestingDb ? 'Menguji Koneksi...' : 'Uji Koneksi Supabase'}</span>
+              <span>{isTestingDb ? 'Menguji Koneksi...' : 'Uji Koneksi Database'}</span>
             </button>
 
             <button

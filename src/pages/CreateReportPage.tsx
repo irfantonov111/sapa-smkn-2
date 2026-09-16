@@ -25,6 +25,7 @@ import { db } from '../services/db';
 import { ReportUrgency, ReportPrivacy, AssignedTo, Category, ReportAttachment } from '../types/database';
 import { CategoryIcon } from '../components/StatusBadges';
 import { BkTeacherFormSelector } from '../components/BkTeacherComponents';
+import { decryptNip } from '../utils/nipCrypto';
 
 interface CreateReportPageProps {
   onNavigate: (tab: string, reportId?: string) => void;
@@ -641,7 +642,7 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
                           </span>
                         </div>
                         <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
-                          {studentClass?.name || 'Kelas Anda'} • NIP: {homeroomTeacher.nip}
+                          {studentClass?.name || 'Kelas Anda'} • NIP: {decryptNip(homeroomTeacher.nip)}
                         </p>
                         <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
                           Sesuai data kelas Anda ({studentClass?.name || 'Rombel'}), pengaduan ini secara otomatis diteruskan langsung ke wali kelas Anda tanpa perlu pemilihan manual.
