@@ -23207,6 +23207,47 @@ async function updateReportStatus(reportId, newStatus, changedByUserId, note) {
     return report;
   }
 }
+async function reassignReport(reportId, assignedTo, assignedTeacherId, customNote) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const historyId = `h-reassign-${Date.now()}`;
+  if (isPostgresConnected && pool) {
+    const updateRes = await pool.query(
+      `UPDATE reports
+       SET assigned_to = $1, assigned_teacher_id = $2, updated_at = $3
+       WHERE id = $4 RETURNING *`,
+      [assignedTo, assignedTeacherId, now, reportId]
+    );
+    if (updateRes.rows.length === 0) return false;
+    await pool.query(
+      `INSERT INTO report_status_history (id, report_id, status, changed_by, note, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        historyId,
+        reportId,
+        updateRes.rows[0].status || "dibaca",
+        "admin",
+        customNote || `Penanganan laporan dialihkan ke ${assignedTo === "guru_bk" ? "Guru BK" : "Wali Kelas"}`,
+        now
+      ]
+    );
+    return true;
+  } else {
+    const report = memoryStore.reports.find((r) => r.id === reportId);
+    if (!report) return false;
+    report.assigned_to = assignedTo;
+    report.assigned_teacher_id = assignedTeacherId;
+    report.updated_at = now;
+    memoryStore.status_history.push({
+      id: historyId,
+      report_id: reportId,
+      status: report.status,
+      changed_by: "admin",
+      note: customNote || `Penanganan laporan dialihkan ke ${assignedTo === "guru_bk" ? "Guru BK" : "Wali Kelas"}`,
+      created_at: now
+    });
+    return true;
+  }
+}
 async function deleteReport(reportId) {
   if (isPostgresConnected && pool) {
     await pool.query("DELETE FROM messages WHERE report_id = $1", [reportId]);
@@ -23379,6 +23420,489 @@ async function getBkTeachers() {
       assigned_class_ids: t.assigned_class_ids || []
     };
   });
+}
+async function createStudent(data) {
+  const userId = `usr-s-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const studentId = `std-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const defaultPass = data.password || `siswa${data.nis.slice(-4)}`;
+  const hashedPassword = hashPassword(defaultPass);
+  const newUser = {
+    id: userId,
+    name: data.name.trim(),
+    email: data.email.trim(),
+    role: "siswa",
+    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name.trim())}`,
+    phone: data.phone || "",
+    password: hashedPassword,
+    password_changed: false,
+    created_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  const newStudent = {
+    id: studentId,
+    user_id: userId,
+    nis: data.nis.trim(),
+    class_id: data.class_id,
+    created_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (isPostgresConnected && pool) {
+    await pool.query(
+      `INSERT INTO users (id, name, email, password, role, avatar, phone, password_changed, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, phone = $7`,
+      [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.avatar, newUser.phone, newUser.password_changed]
+    );
+    await pool.query(
+      `INSERT INTO students (id, user_id, nis, class_id, created_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET nis = $3, class_id = $4`,
+      [newStudent.id, newStudent.user_id, newStudent.nis, newStudent.class_id]
+    );
+  }
+  memoryStore.users.push(newUser);
+  memoryStore.students.push(newStudent);
+  return { user: newUser, student: newStudent };
+}
+async function createTeacher(data) {
+  const userId = `usr-t-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const teacherId = `tch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const hashedPassword = hashPassword("guru123");
+  const newUser = {
+    id: userId,
+    name: data.name.trim(),
+    email: data.email.trim(),
+    role: "guru",
+    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name.trim())}`,
+    phone: data.phone || "",
+    password: hashedPassword,
+    password_changed: false,
+    created_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  const newTeacher = {
+    id: teacherId,
+    user_id: userId,
+    nip: data.nip.trim(),
+    teacher_type: data.teacher_type,
+    specialization: data.specialization || (data.teacher_type === "guru_bk" ? "Konseling Umum" : "Wali Kelas"),
+    room: data.room || (data.teacher_type === "guru_bk" ? "Ruang BK" : "Ruang Guru"),
+    bio: data.bio || "Pendidik siap mendampingi siswa.",
+    available_hours: data.available_hours || "Senin - Jumat 07.30 - 15.00 WIB",
+    is_active: true,
+    assigned_class_ids: data.assigned_class_ids || [],
+    created_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (isPostgresConnected && pool) {
+    await pool.query(
+      `INSERT INTO users (id, name, email, password, role, avatar, phone, password_changed, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, phone = $7`,
+      [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.avatar, newUser.phone, newUser.password_changed]
+    );
+    await pool.query(
+      `INSERT INTO teachers (id, user_id, nip, teacher_type, specialization, room, bio, available_hours, is_active, assigned_class_ids, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET nip = $3, teacher_type = $4, specialization = $5, room = $6, bio = $7, available_hours = $8, assigned_class_ids = $10`,
+      [
+        newTeacher.id,
+        newTeacher.user_id,
+        newTeacher.nip,
+        newTeacher.teacher_type,
+        newTeacher.specialization,
+        newTeacher.room,
+        newTeacher.bio,
+        newTeacher.available_hours,
+        newTeacher.is_active,
+        JSON.stringify(newTeacher.assigned_class_ids)
+      ]
+    );
+    if (data.teacher_type === "wali_kelas" && data.managed_class_id) {
+      await pool.query("UPDATE classes SET homeroom_teacher_id = $1 WHERE id = $2", [newTeacher.id, data.managed_class_id]);
+    }
+  }
+  memoryStore.users.push(newUser);
+  memoryStore.teachers.push(newTeacher);
+  if (data.teacher_type === "wali_kelas" && data.managed_class_id) {
+    const cls = memoryStore.classes.find((c) => c.id === data.managed_class_id);
+    if (cls) cls.homeroom_teacher_id = newTeacher.id;
+  }
+  return { user: newUser, teacher: newTeacher };
+}
+async function updateUserDetails(userId, data) {
+  const user = await getUserById(userId);
+  if (!user) return false;
+  const updates = {};
+  if (data.name !== void 0) updates.name = data.name.trim();
+  if (data.email !== void 0) updates.email = data.email.trim();
+  if (data.phone !== void 0) updates.phone = data.phone.trim();
+  if (data.password && data.password.trim()) {
+    updates.password = hashPassword(data.password.trim());
+    updates.password_changed = false;
+  }
+  if (isPostgresConnected && pool) {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    if (updates.name !== void 0) {
+      fields.push(`name = $${idx++}`);
+      values.push(updates.name);
+    }
+    if (updates.email !== void 0) {
+      fields.push(`email = $${idx++}`);
+      values.push(updates.email);
+    }
+    if (updates.phone !== void 0) {
+      fields.push(`phone = $${idx++}`);
+      values.push(updates.phone);
+    }
+    if (updates.password !== void 0) {
+      fields.push(`password = $${idx++}`);
+      values.push(updates.password);
+      fields.push(`password_changed = $${idx++}`);
+      values.push(false);
+    }
+    if (fields.length > 0) {
+      values.push(userId);
+      await pool.query(`UPDATE users SET ${fields.join(", ")} WHERE id = $${idx}`, values);
+    }
+    if (user.role === "siswa") {
+      const sFields = [];
+      const sValues = [];
+      let sIdx = 1;
+      if (data.nis !== void 0) {
+        sFields.push(`nis = $${sIdx++}`);
+        sValues.push(data.nis.trim());
+      }
+      if (data.class_id !== void 0) {
+        sFields.push(`class_id = $${sIdx++}`);
+        sValues.push(data.class_id);
+      }
+      if (sFields.length > 0) {
+        sValues.push(userId);
+        await pool.query(`UPDATE students SET ${sFields.join(", ")} WHERE user_id = $${sIdx}`, sValues);
+      }
+      if (data.class_id && data.homeroom_teacher_id !== void 0) {
+        await pool.query("UPDATE classes SET homeroom_teacher_id = $1 WHERE id = $2", [data.homeroom_teacher_id || null, data.class_id]);
+      }
+    }
+    if (user.role === "guru") {
+      const tFields = [];
+      const tValues = [];
+      let tIdx = 1;
+      if (data.nip !== void 0) {
+        tFields.push(`nip = $${tIdx++}`);
+        tValues.push(data.nip.trim());
+      }
+      if (data.specialization !== void 0) {
+        tFields.push(`specialization = $${tIdx++}`);
+        tValues.push(data.specialization.trim());
+      }
+      if (data.room !== void 0) {
+        tFields.push(`room = $${tIdx++}`);
+        tValues.push(data.room.trim());
+      }
+      if (data.bio !== void 0) {
+        tFields.push(`bio = $${tIdx++}`);
+        tValues.push(data.bio.trim());
+      }
+      if (data.available_hours !== void 0) {
+        tFields.push(`available_hours = $${tIdx++}`);
+        tValues.push(data.available_hours.trim());
+      }
+      if (data.assigned_class_ids !== void 0) {
+        tFields.push(`assigned_class_ids = $${tIdx++}`);
+        tValues.push(JSON.stringify(data.assigned_class_ids));
+      }
+      if (tFields.length > 0) {
+        tValues.push(userId);
+        await pool.query(`UPDATE teachers SET ${tFields.join(", ")} WHERE user_id = $${tIdx}`, tValues);
+      }
+      const teacherRes = await pool.query("SELECT id, teacher_type FROM teachers WHERE user_id = $1", [userId]);
+      const teacher = teacherRes.rows[0];
+      if (teacher && teacher.teacher_type === "wali_kelas" && data.managed_class_id !== void 0) {
+        await pool.query("UPDATE classes SET homeroom_teacher_id = NULL WHERE homeroom_teacher_id = $1", [teacher.id]);
+        if (data.managed_class_id) {
+          await pool.query("UPDATE classes SET homeroom_teacher_id = $1 WHERE id = $2", [teacher.id, data.managed_class_id]);
+        }
+      }
+    }
+  }
+  const memUser = memoryStore.users.find((u) => u.id === userId);
+  if (memUser) {
+    if (updates.name !== void 0) memUser.name = updates.name;
+    if (updates.email !== void 0) memUser.email = updates.email;
+    if (updates.phone !== void 0) memUser.phone = updates.phone;
+    if (updates.password !== void 0) {
+      memUser.password = updates.password;
+      memUser.password_changed = false;
+    }
+  }
+  if (user.role === "siswa") {
+    const memStudent = memoryStore.students.find((s) => s.user_id === userId);
+    if (memStudent) {
+      if (data.nis !== void 0) memStudent.nis = data.nis.trim();
+      if (data.class_id !== void 0) memStudent.class_id = data.class_id;
+    }
+    if (data.class_id && data.homeroom_teacher_id !== void 0) {
+      const cls = memoryStore.classes.find((c) => c.id === data.class_id);
+      if (cls) cls.homeroom_teacher_id = data.homeroom_teacher_id || null;
+    }
+  }
+  if (user.role === "guru") {
+    const memTeacher = memoryStore.teachers.find((t) => t.user_id === userId);
+    if (memTeacher) {
+      if (data.nip !== void 0) memTeacher.nip = data.nip.trim();
+      if (data.specialization !== void 0) memTeacher.specialization = data.specialization.trim();
+      if (data.room !== void 0) memTeacher.room = data.room.trim();
+      if (data.bio !== void 0) memTeacher.bio = data.bio.trim();
+      if (data.available_hours !== void 0) memTeacher.available_hours = data.available_hours.trim();
+      if (data.assigned_class_ids !== void 0) memTeacher.assigned_class_ids = [...data.assigned_class_ids];
+      if (memTeacher.teacher_type === "wali_kelas" && data.managed_class_id !== void 0) {
+        memoryStore.classes.forEach((c) => {
+          if (c.homeroom_teacher_id === memTeacher.id && c.id !== data.managed_class_id) {
+            c.homeroom_teacher_id = null;
+          }
+        });
+        if (data.managed_class_id) {
+          const cls = memoryStore.classes.find((c) => c.id === data.managed_class_id);
+          if (cls) cls.homeroom_teacher_id = memTeacher.id;
+        }
+      }
+    }
+  }
+  return true;
+}
+async function bulkDeleteUsersPermanently(rawIds) {
+  if (!rawIds || rawIds.length === 0) return 0;
+  const cleanIds = Array.from(new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean)));
+  if (cleanIds.length === 0) return 0;
+  if (isPostgresConnected && pool) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const uRes = await client.query("SELECT id FROM users WHERE id = ANY($1)", [cleanIds]);
+      const resolvedUserIds = new Set(uRes.rows.map((r) => r.id));
+      const sRes = await client.query(
+        "SELECT id, user_id FROM students WHERE id = ANY($1) OR user_id = ANY($1)",
+        [cleanIds]
+      );
+      const studentIds = [];
+      for (const row of sRes.rows) {
+        studentIds.push(row.id);
+        if (row.user_id) resolvedUserIds.add(row.user_id);
+      }
+      const tRes = await client.query(
+        "SELECT id, user_id FROM teachers WHERE id = ANY($1) OR user_id = ANY($1)",
+        [cleanIds]
+      );
+      const teacherIds = [];
+      for (const row of tRes.rows) {
+        teacherIds.push(row.id);
+        if (row.user_id) resolvedUserIds.add(row.user_id);
+      }
+      cleanIds.forEach((id) => resolvedUserIds.add(id));
+      const allUserIds = Array.from(resolvedUserIds);
+      if (teacherIds.length > 0) {
+        await client.query(
+          "UPDATE classes SET homeroom_teacher_id = NULL WHERE homeroom_teacher_id = ANY($1)",
+          [teacherIds]
+        );
+        await client.query(
+          "UPDATE classes SET bk_teacher_id = NULL WHERE bk_teacher_id = ANY($1)",
+          [teacherIds]
+        );
+      }
+      if (studentIds.length > 0) {
+        const repRes = await client.query("SELECT id FROM reports WHERE student_id = ANY($1)", [studentIds]);
+        const reportIds = repRes.rows.map((r) => r.id);
+        if (reportIds.length > 0) {
+          await client.query("DELETE FROM messages WHERE report_id = ANY($1)", [reportIds]);
+          await client.query("DELETE FROM report_status_history WHERE report_id = ANY($1)", [reportIds]);
+          await client.query("DELETE FROM notifications WHERE report_id = ANY($1)", [reportIds]);
+          await client.query("DELETE FROM reports WHERE id = ANY($1)", [reportIds]);
+        }
+        await client.query("DELETE FROM student_mood_checks WHERE student_id = ANY($1)", [studentIds]);
+        await client.query("DELETE FROM students WHERE id = ANY($1)", [studentIds]);
+      }
+      if (allUserIds.length > 0) {
+        await client.query("DELETE FROM student_mood_checks WHERE student_user_id = ANY($1)", [allUserIds]);
+        await client.query("DELETE FROM messages WHERE sender_id = ANY($1)", [allUserIds]);
+        await client.query("DELETE FROM report_status_history WHERE changed_by = ANY($1)", [allUserIds]);
+        await client.query("DELETE FROM notifications WHERE user_id = ANY($1)", [allUserIds]);
+        await client.query("DELETE FROM students WHERE user_id = ANY($1)", [allUserIds]);
+        await client.query("DELETE FROM teachers WHERE user_id = ANY($1)", [allUserIds]);
+        await client.query("DELETE FROM users WHERE id = ANY($1)", [allUserIds]);
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("[ADVOCARE DB] Error during bulkDeleteUsersPermanently in PostgreSQL:", err);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  const memoryUserIds = /* @__PURE__ */ new Set();
+  const memoryStudentIds = /* @__PURE__ */ new Set();
+  const memoryTeacherIds = /* @__PURE__ */ new Set();
+  cleanIds.forEach((id) => {
+    memoryUserIds.add(id);
+    const s = memoryStore.students.find((st) => st.id === id || st.user_id === id);
+    if (s) {
+      memoryStudentIds.add(s.id);
+      memoryUserIds.add(s.user_id);
+    }
+    const t = memoryStore.teachers.find((tc) => tc.id === id || tc.user_id === id);
+    if (t) {
+      memoryTeacherIds.add(t.id);
+      memoryUserIds.add(t.user_id);
+    }
+  });
+  if (memoryTeacherIds.size > 0) {
+    memoryStore.classes.forEach((c) => {
+      if (c.homeroom_teacher_id && memoryTeacherIds.has(c.homeroom_teacher_id)) {
+        c.homeroom_teacher_id = null;
+      }
+      if (c.bk_teacher_id && (memoryTeacherIds.has(c.bk_teacher_id) || memoryUserIds.has(c.bk_teacher_id))) {
+        c.bk_teacher_id = void 0;
+      }
+    });
+    memoryStore.teachers = memoryStore.teachers.filter(
+      (t) => !memoryTeacherIds.has(t.id) && !memoryUserIds.has(t.user_id)
+    );
+  }
+  if (memoryStudentIds.size > 0) {
+    memoryStore.students = memoryStore.students.filter(
+      (s) => !memoryStudentIds.has(s.id) && !memoryUserIds.has(s.user_id)
+    );
+    if (memoryStore.mood_checks) {
+      memoryStore.mood_checks = memoryStore.mood_checks.filter(
+        (mc) => !memoryStudentIds.has(mc.student_id) && !memoryUserIds.has(mc.student_user_id)
+      );
+    }
+  }
+  memoryStore.users = memoryStore.users.filter((u) => !memoryUserIds.has(u.id));
+  memoryStore.notifications = memoryStore.notifications.filter((n) => !memoryUserIds.has(n.user_id));
+  return cleanIds.length;
+}
+async function deleteUserPermanently(userId) {
+  const count = await bulkDeleteUsersPermanently([userId]);
+  return count > 0;
+}
+async function createClass(data) {
+  const newClass = {
+    id: `cls-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    name: data.name.trim(),
+    grade: data.grade,
+    major: data.major.trim() || "Umum",
+    homeroom_teacher_id: data.homeroom_teacher_id || null,
+    bk_teacher_id: data.bk_teacher_id || void 0
+  };
+  if (isPostgresConnected && pool) {
+    await pool.query(
+      `INSERT INTO classes (id, name, grade, major, homeroom_teacher_id, bk_teacher_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [newClass.id, newClass.name, newClass.grade, newClass.major, newClass.homeroom_teacher_id, newClass.bk_teacher_id]
+    );
+    if (newClass.bk_teacher_id) {
+      const tRes = await pool.query("SELECT assigned_class_ids FROM teachers WHERE id = $1 OR user_id = $1", [newClass.bk_teacher_id]);
+      if (tRes.rows[0]) {
+        let assigned = tRes.rows[0].assigned_class_ids;
+        if (typeof assigned === "string") assigned = JSON.parse(assigned);
+        if (!Array.isArray(assigned)) assigned = [];
+        if (!assigned.includes(newClass.id)) {
+          assigned.push(newClass.id);
+          await pool.query("UPDATE teachers SET assigned_class_ids = $1 WHERE id = $2 OR user_id = $2", [JSON.stringify(assigned), newClass.bk_teacher_id]);
+        }
+      }
+    }
+  }
+  memoryStore.classes.push(newClass);
+  return newClass;
+}
+async function updateClassDetails(classId, data) {
+  if (isPostgresConnected && pool) {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    if (data.name !== void 0) {
+      fields.push(`name = $${idx++}`);
+      values.push(data.name.trim());
+    }
+    if (data.grade !== void 0) {
+      fields.push(`grade = $${idx++}`);
+      values.push(data.grade);
+    }
+    if (data.major !== void 0) {
+      fields.push(`major = $${idx++}`);
+      values.push(data.major.trim());
+    }
+    if (data.homeroom_teacher_id !== void 0) {
+      fields.push(`homeroom_teacher_id = $${idx++}`);
+      values.push(data.homeroom_teacher_id || null);
+    }
+    if (data.bk_teacher_id !== void 0) {
+      fields.push(`bk_teacher_id = $${idx++}`);
+      values.push(data.bk_teacher_id || null);
+    }
+    if (fields.length > 0) {
+      values.push(classId);
+      await pool.query(`UPDATE classes SET ${fields.join(", ")} WHERE id = $${idx}`, values);
+    }
+  }
+  const cls = memoryStore.classes.find((c) => c.id === classId);
+  if (cls) {
+    Object.assign(cls, data);
+  }
+  return true;
+}
+async function deleteClassPermanently(classId) {
+  if (isPostgresConnected && pool) {
+    await pool.query("DELETE FROM classes WHERE id = $1", [classId]);
+  }
+  memoryStore.classes = memoryStore.classes.filter((c) => c.id !== classId);
+  return true;
+}
+async function updateCategoryDetails(categoryId, data) {
+  if (isPostgresConnected && pool) {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    if (data.name !== void 0) {
+      fields.push(`name = $${idx++}`);
+      values.push(data.name.trim());
+    }
+    if (data.description !== void 0) {
+      fields.push(`description = $${idx++}`);
+      values.push(data.description.trim());
+    }
+    if (data.icon !== void 0) {
+      fields.push(`icon = $${idx++}`);
+      values.push(data.icon);
+    }
+    if (data.color !== void 0) {
+      fields.push(`color = $${idx++}`);
+      values.push(data.color);
+    }
+    if (data.active !== void 0) {
+      fields.push(`active = $${idx++}`);
+      values.push(data.active);
+    }
+    if (fields.length > 0) {
+      values.push(categoryId);
+      await pool.query(`UPDATE categories SET ${fields.join(", ")} WHERE id = $${idx}`, values);
+    }
+  }
+  const cat = memoryStore.categories.find((c) => c.id === categoryId);
+  if (cat) {
+    Object.assign(cat, data);
+  }
+  return true;
+}
+async function deleteCategoryPermanently(categoryId) {
+  if (isPostgresConnected && pool) {
+    await pool.query("DELETE FROM categories WHERE id = $1", [categoryId]);
+  }
+  memoryStore.categories = memoryStore.categories.filter((c) => c.id !== categoryId);
+  return true;
 }
 
 // server/routes.ts
@@ -23623,10 +24147,111 @@ apiRouter.post("/users/:id/change-password", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+apiRouter.post("/users/student", async (req, res) => {
+  try {
+    const { name, email, nis, class_id, password, phone } = req.body;
+    if (!name || !email || !nis || !class_id) {
+      return res.status(400).json({ error: "Nama, Email, NIS, dan Kelas wajib diisi" });
+    }
+    const result = await createStudent({ name, email, nis, class_id, password, phone });
+    res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.post("/users/teacher", async (req, res) => {
+  try {
+    const { name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids } = req.body;
+    if (!name || !email || !nip || !teacher_type) {
+      return res.status(400).json({ error: "Nama, Email, NIP, dan Peran Guru wajib diisi" });
+    }
+    const result = await createTeacher({
+      name,
+      email,
+      nip,
+      teacher_type,
+      phone,
+      specialization,
+      room,
+      bio,
+      available_hours,
+      managed_class_id,
+      assigned_class_ids
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.all(["/users/:id/update", "/users/:id/details"], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await updateUserDetails(id, req.body);
+    if (!success) {
+      return res.status(404).json({ error: "Pengguna tidak ditemukan" });
+    }
+    res.json({ success: true, message: "Pengguna berhasil diperbarui" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.delete("/users/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await deleteUserPermanently(id);
+    res.json({ success, message: "Pengguna berhasil dihapus permanen" });
+  } catch (err) {
+    console.error(`[ADVOCARE ROUTER] Error deleting user ${req.params.id}:`, err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+apiRouter.all(["/users/bulk-delete", "/users/bulk-delete/"], async (req, res) => {
+  if (req.method !== "POST" && req.method !== "DELETE") {
+    return res.status(405).json({ success: false, error: "Method not allowed. Use POST or DELETE." });
+  }
+  try {
+    const rawIds = req.body?.userIds || req.body?.ids || (Array.isArray(req.body) ? req.body : []);
+    const count = await bulkDeleteUsersPermanently(rawIds || []);
+    res.json({ success: true, count, message: `${count} pengguna berhasil dihapus permanen` });
+  } catch (err) {
+    console.error("[ADVOCARE ROUTER] Bulk delete users error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 apiRouter.get("/classes", async (req, res) => {
   try {
     const classes = await getClasses();
     res.json(classes);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.post("/classes", async (req, res) => {
+  try {
+    const { name, grade, major, homeroom_teacher_id, bk_teacher_id } = req.body;
+    if (!name || !grade) {
+      return res.status(400).json({ error: "Nama kelas dan tingkat kelas wajib diisi" });
+    }
+    const newClass = await createClass({ name, grade, major: major || "Umum", homeroom_teacher_id, bk_teacher_id });
+    res.status(201).json(newClass);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.put("/classes/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await updateClassDetails(id, req.body);
+    res.json({ success, message: "Kelas berhasil diperbarui" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.delete("/classes/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await deleteClassPermanently(id);
+    res.json({ success, message: "Kelas berhasil dihapus" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -23667,6 +24292,24 @@ apiRouter.post("/categories", async (req, res) => {
       active: true
     });
     res.status(201).json(newCategory);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.put("/categories/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await updateCategoryDetails(id, req.body);
+    res.json({ success, message: "Kategori berhasil diperbarui" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.delete("/categories/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = await deleteCategoryPermanently(id);
+    res.json({ success, message: "Kategori berhasil dihapus" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -23739,6 +24382,19 @@ apiRouter.patch("/reports/:id/status", async (req, res) => {
       return res.status(404).json({ error: "Laporan tidak ditemukan" });
     }
     res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.post("/reports/:id/reassign", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { assigned_to, assigned_teacher_id, customNote } = req.body;
+    const success = await reassignReport(id, assigned_to, assigned_teacher_id, customNote);
+    if (!success) {
+      return res.status(404).json({ error: "Laporan tidak ditemukan" });
+    }
+    res.json({ success: true, message: "Laporan berhasil dialihkan" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

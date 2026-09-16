@@ -378,18 +378,23 @@ apiRouter.delete('/users/:id', async (req: Request, res: Response) => {
     const success = await deleteUserPermanently(id);
     res.json({ success, message: 'Pengguna berhasil dihapus permanen' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error(`[ADVOCARE ROUTER] Error deleting user ${req.params.id}:`, err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Bulk delete users
-apiRouter.post('/users/bulk-delete', async (req: Request, res: Response) => {
+// Bulk delete users (supports POST and DELETE)
+apiRouter.all(['/users/bulk-delete', '/users/bulk-delete/'], async (req: Request, res: Response) => {
+  if (req.method !== 'POST' && req.method !== 'DELETE') {
+    return res.status(405).json({ success: false, error: 'Method not allowed. Use POST or DELETE.' });
+  }
   try {
-    const { userIds } = req.body;
-    const count = await bulkDeleteUsersPermanently(userIds || []);
+    const rawIds = req.body?.userIds || req.body?.ids || (Array.isArray(req.body) ? req.body : []);
+    const count = await bulkDeleteUsersPermanently(rawIds || []);
     res.json({ success: true, count, message: `${count} pengguna berhasil dihapus permanen` });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[ADVOCARE ROUTER] Bulk delete users error:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

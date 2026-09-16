@@ -1737,49 +1737,155 @@ export async function updateUserDetails(userId: string, data: {
   return true;
 }
 
-export async function deleteUserPermanently(userId: string): Promise<boolean> {
+export async function bulkDeleteUsersPermanently(rawIds: string[]): Promise<number> {
+  if (!rawIds || rawIds.length === 0) return 0;
+
+  // Clean, trim, and deduplicate
+  const cleanIds = Array.from(new Set(rawIds.map(id => String(id || '').trim()).filter(Boolean)));
+  if (cleanIds.length === 0) return 0;
+
   if (isPostgresConnected && pool) {
-    // 1. Get teacher id if any to unlink from classes
-    const tRes = await pool.query('SELECT id FROM teachers WHERE user_id = $1', [userId]);
-    const teacherId = tRes.rows[0]?.id;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    if (teacherId) {
-      await pool.query('UPDATE classes SET homeroom_teacher_id = NULL WHERE homeroom_teacher_id = $1', [teacherId]);
-      await pool.query('UPDATE classes SET bk_teacher_id = NULL WHERE bk_teacher_id = $1', [teacherId]);
+      // 1. Resolve all matching users, students, and teachers
+      const uRes = await client.query('SELECT id FROM users WHERE id = ANY($1)', [cleanIds]);
+      const resolvedUserIds = new Set<string>(uRes.rows.map(r => r.id));
+
+      const sRes = await client.query(
+        'SELECT id, user_id FROM students WHERE id = ANY($1) OR user_id = ANY($1)',
+        [cleanIds]
+      );
+      const studentIds: string[] = [];
+      for (const row of sRes.rows) {
+        studentIds.push(row.id);
+        if (row.user_id) resolvedUserIds.add(row.user_id);
+      }
+
+      const tRes = await client.query(
+        'SELECT id, user_id FROM teachers WHERE id = ANY($1) OR user_id = ANY($1)',
+        [cleanIds]
+      );
+      const teacherIds: string[] = [];
+      for (const row of tRes.rows) {
+        teacherIds.push(row.id);
+        if (row.user_id) resolvedUserIds.add(row.user_id);
+      }
+
+      // Also ensure all cleanIds are in the user deletion set
+      cleanIds.forEach(id => resolvedUserIds.add(id));
+      const allUserIds = Array.from(resolvedUserIds);
+
+      // 2. Unlink teachers from classes
+      if (teacherIds.length > 0) {
+        await client.query(
+          'UPDATE classes SET homeroom_teacher_id = NULL WHERE homeroom_teacher_id = ANY($1)',
+          [teacherIds]
+        );
+        await client.query(
+          'UPDATE classes SET bk_teacher_id = NULL WHERE bk_teacher_id = ANY($1)',
+          [teacherIds]
+        );
+      }
+
+      // 3. Remove reports & all their cascading dependencies for these students
+      if (studentIds.length > 0) {
+        const repRes = await client.query('SELECT id FROM reports WHERE student_id = ANY($1)', [studentIds]);
+        const reportIds = repRes.rows.map(r => r.id);
+        if (reportIds.length > 0) {
+          await client.query('DELETE FROM messages WHERE report_id = ANY($1)', [reportIds]);
+          await client.query('DELETE FROM report_status_history WHERE report_id = ANY($1)', [reportIds]);
+          await client.query('DELETE FROM notifications WHERE report_id = ANY($1)', [reportIds]);
+          await client.query('DELETE FROM reports WHERE id = ANY($1)', [reportIds]);
+        }
+
+        // Clean student mood checks
+        await client.query('DELETE FROM student_mood_checks WHERE student_id = ANY($1)', [studentIds]);
+        // Delete student records
+        await client.query('DELETE FROM students WHERE id = ANY($1)', [studentIds]);
+      }
+
+      if (allUserIds.length > 0) {
+        // Clean any mood checks referencing student_user_id
+        await client.query('DELETE FROM student_mood_checks WHERE student_user_id = ANY($1)', [allUserIds]);
+        // Delete messages sent by these users
+        await client.query('DELETE FROM messages WHERE sender_id = ANY($1)', [allUserIds]);
+        // Delete report status history changed by these users
+        await client.query('DELETE FROM report_status_history WHERE changed_by = ANY($1)', [allUserIds]);
+        // Delete notifications for these users
+        await client.query('DELETE FROM notifications WHERE user_id = ANY($1)', [allUserIds]);
+        // Delete students referencing user_id if not already deleted
+        await client.query('DELETE FROM students WHERE user_id = ANY($1)', [allUserIds]);
+        // Delete teachers referencing user_id
+        await client.query('DELETE FROM teachers WHERE user_id = ANY($1)', [allUserIds]);
+        // Finally, delete the users themselves
+        await client.query('DELETE FROM users WHERE id = ANY($1)', [allUserIds]);
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('[ADVOCARE DB] Error during bulkDeleteUsersPermanently in PostgreSQL:', err);
+      throw err;
+    } finally {
+      client.release();
     }
-
-    // 2. Delete related records
-    await pool.query('DELETE FROM notifications WHERE user_id = $1', [userId]);
-    await pool.query('DELETE FROM students WHERE user_id = $1', [userId]);
-    await pool.query('DELETE FROM teachers WHERE user_id = $1', [userId]);
-    await pool.query('DELETE FROM users WHERE id = $1', [userId]);
   }
 
   // Update memoryStore
-  const teacher = memoryStore.teachers.find(t => t.user_id === userId);
-  if (teacher) {
+  const memoryUserIds = new Set<string>();
+  const memoryStudentIds = new Set<string>();
+  const memoryTeacherIds = new Set<string>();
+
+  cleanIds.forEach(id => {
+    memoryUserIds.add(id);
+    const s = memoryStore.students.find(st => st.id === id || st.user_id === id);
+    if (s) {
+      memoryStudentIds.add(s.id);
+      memoryUserIds.add(s.user_id);
+    }
+    const t = memoryStore.teachers.find(tc => tc.id === id || tc.user_id === id);
+    if (t) {
+      memoryTeacherIds.add(t.id);
+      memoryUserIds.add(t.user_id);
+    }
+  });
+
+  if (memoryTeacherIds.size > 0) {
     memoryStore.classes.forEach(c => {
-      if (c.homeroom_teacher_id === teacher.id) c.homeroom_teacher_id = null;
-      if (c.bk_teacher_id === teacher.id || c.bk_teacher_id === teacher.user_id) c.bk_teacher_id = undefined;
+      if (c.homeroom_teacher_id && memoryTeacherIds.has(c.homeroom_teacher_id)) {
+        c.homeroom_teacher_id = null;
+      }
+      if (c.bk_teacher_id && (memoryTeacherIds.has(c.bk_teacher_id) || memoryUserIds.has(c.bk_teacher_id))) {
+        c.bk_teacher_id = undefined;
+      }
     });
-    memoryStore.teachers = memoryStore.teachers.filter(t => t.id !== teacher.id);
+    memoryStore.teachers = memoryStore.teachers.filter(
+      t => !memoryTeacherIds.has(t.id) && !memoryUserIds.has(t.user_id)
+    );
   }
 
-  memoryStore.students = memoryStore.students.filter(s => s.user_id !== userId);
-  memoryStore.users = memoryStore.users.filter(u => u.id !== userId);
-  memoryStore.notifications = memoryStore.notifications.filter(n => n.user_id !== userId);
+  if (memoryStudentIds.size > 0) {
+    memoryStore.students = memoryStore.students.filter(
+      s => !memoryStudentIds.has(s.id) && !memoryUserIds.has(s.user_id)
+    );
+    if (memoryStore.mood_checks) {
+      memoryStore.mood_checks = memoryStore.mood_checks.filter(
+        (mc: any) => !memoryStudentIds.has(mc.student_id) && !memoryUserIds.has(mc.student_user_id)
+      );
+    }
+  }
 
-  return true;
+  memoryStore.users = memoryStore.users.filter(u => !memoryUserIds.has(u.id));
+  memoryStore.notifications = memoryStore.notifications.filter(n => !memoryUserIds.has(n.user_id));
+
+  return cleanIds.length;
 }
 
-export async function bulkDeleteUsersPermanently(userIds: string[]): Promise<number> {
-  if (!userIds || userIds.length === 0) return 0;
-  let count = 0;
-  for (const uid of userIds) {
-    const ok = await deleteUserPermanently(uid);
-    if (ok) count++;
-  }
-  return count;
+export async function deleteUserPermanently(userId: string): Promise<boolean> {
+  const count = await bulkDeleteUsersPermanently([userId]);
+  return count > 0;
 }
 
 // --- CLASS CRUD ---

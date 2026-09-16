@@ -127,54 +127,8 @@ class DatabaseService {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed.users) && parsed.users.length > 0) {
-          // Synchronize classes
-          if (Array.isArray(parsed.classes)) {
-            for (const initC of INITIAL_CLASSES) {
-              const existingC = parsed.classes.find((c: SchoolClass) => c.id === initC.id);
-              if (!existingC) {
-                parsed.classes.push(initC);
-              }
-            }
-          }
-          // Synchronize teachers
-          if (Array.isArray(parsed.teachers)) {
-            for (const initT of INITIAL_TEACHERS) {
-              const existing = parsed.teachers.find((t: Teacher) => t.id === initT.id);
-              if (existing) {
-                existing.specialization = initT.specialization;
-                existing.room = initT.room;
-                existing.bio = initT.bio;
-                existing.available_hours = initT.available_hours;
-              } else {
-                parsed.teachers.push(initT);
-              }
-            }
-          }
-          // Synchronize students
-          if (Array.isArray(parsed.students)) {
-            for (const initS of INITIAL_STUDENTS) {
-              const existingS = parsed.students.find((s: Student) => s.id === initS.id);
-              if (!existingS) {
-                parsed.students.push(initS);
-              }
-            }
-          }
-          // Synchronize users and encrypt passwords if needed
+          // Normalize existing users and enforce encryption
           if (Array.isArray(parsed.users)) {
-            for (const initU of INITIAL_USERS) {
-              const existingU = parsed.users.find((u: User) => u.id === initU.id);
-              if (!existingU) {
-                parsed.users.push(initU);
-              } else {
-                if (!existingU.password && initU.password) {
-                  existingU.password = initU.password;
-                }
-                if (typeof existingU.avatar === 'string' && existingU.avatar.includes('images.unsplash.com')) {
-                  existingU.avatar = initU.avatar;
-                }
-              }
-            }
-            // Enforce encryption for all passwords in parsed storage
             for (const u of parsed.users) {
               if (u.password && !isPasswordEncrypted(u.password)) {
                 u.password = hashPassword(u.password);
@@ -296,16 +250,30 @@ class DatabaseService {
     this.notifyListeners();
   }
 
-  // Background server synchronizer
-  private async syncToServer(endpoint: string, method: string, data?: any) {
+  // Background server synchronizer with status and error reporting
+  private async syncToServer(endpoint: string, method: string, data?: any): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
-      await fetch(endpoint, {
+      const res = await fetch(endpoint, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: data ? JSON.stringify(data) : undefined
       });
-    } catch {
-      // Graceful offline fallback
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const json = await res.json();
+        if (!res.ok) {
+          console.warn(`[syncToServer] ${method} ${endpoint} returned ${res.status}:`, json);
+          return { success: false, error: json.error || `Server HTTP ${res.status}` };
+        }
+        return { success: true, data: json };
+      }
+      if (!res.ok) {
+        return { success: false, error: `Server HTTP ${res.status}` };
+      }
+      return { success: true };
+    } catch (err: any) {
+      console.warn(`[syncToServer] ${method} ${endpoint} network error:`, err);
+      return { success: false, error: err?.message || 'Gagal terhubung ke backend server' };
     }
   }
 
@@ -1981,12 +1949,12 @@ class DatabaseService {
     return null;
   }
 
-  public deleteUser(userId: string): { success: boolean } {
+  public async deleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
     // 1. If student, delete student record
-    this.state.students = this.state.students.filter(s => s.user_id !== userId);
+    this.state.students = this.state.students.filter(s => s.user_id !== userId && s.id !== userId);
     
     // 2. If teacher, delete teacher record and unlink classes
-    const teacher = this.state.teachers.find(t => t.user_id === userId);
+    const teacher = this.state.teachers.find(t => t.user_id === userId || t.id === userId);
     if (teacher) {
       this.state.classes.forEach(c => {
         if (c.homeroom_teacher_id === teacher.id) {
@@ -1996,7 +1964,7 @@ class DatabaseService {
           c.bk_teacher_id = undefined;
         }
       });
-      this.state.teachers = this.state.teachers.filter(t => t.id !== teacher.id);
+      this.state.teachers = this.state.teachers.filter(t => t.id !== teacher.id && t.user_id !== userId);
     }
 
     // 3. Delete user
@@ -2009,17 +1977,15 @@ class DatabaseService {
     this.notifyListeners();
 
     // Sync to backend Supabase/PostgreSQL
-    this.syncToServer(`/api/users/${userId}`, 'DELETE');
-
-    return { success: true };
+    return await this.syncToServer(`/api/users/${userId}`, 'DELETE');
   }
 
-  public bulkDeleteUsers(userIds: string[]): { success: boolean; count: number } {
+  public async bulkDeleteUsers(userIds: string[]): Promise<{ success: boolean; count: number; error?: string }> {
     if (!userIds || userIds.length === 0) return { success: true, count: 0 };
     const idSet = new Set(userIds);
 
     // 1. Delete student records
-    this.state.students = this.state.students.filter(s => !idSet.has(s.user_id));
+    this.state.students = this.state.students.filter(s => !idSet.has(s.user_id) && !idSet.has(s.id));
 
     // 2. Identify teachers to delete and unlink classes
     const teachersToDelete = this.state.teachers.filter(t => idSet.has(t.user_id) || idSet.has(t.id));
@@ -2042,13 +2008,19 @@ class DatabaseService {
     // 4. Clean notifications
     this.state.notifications = this.state.notifications.filter(n => !idSet.has(n.user_id));
 
+    // 5. Clean mood checks
+    if (this.state.mood_checks) {
+      this.state.mood_checks = this.state.mood_checks.filter(
+        m => !idSet.has((m as any).student_id) && !idSet.has((m as any).student_user_id)
+      );
+    }
+
     this.saveToStorage();
     this.notifyListeners();
 
     // Sync to backend Supabase/PostgreSQL
-    this.syncToServer('/api/users/bulk-delete', 'POST', { userIds });
-
-    return { success: true, count: deletedCount };
+    const syncRes = await this.syncToServer('/api/users/bulk-delete', 'POST', { userIds });
+    return { success: syncRes.success, count: deletedCount, error: syncRes.error };
   }
 
   public addStudent(data: { name: string; email: string; nis: string; class_id: string }): void {

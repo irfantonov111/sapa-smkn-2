@@ -126,7 +126,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     message: string;
   } | null>(null);
 
-  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
   // Pagination & Sorting state
   const [pageSize, setPageSize] = useState<PageSizeOption>(25);
@@ -139,9 +139,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   const [emailSaveSuccess, setEmailSaveSuccess] = useState<boolean>(false);
   const [emailError, setEmailError] = useState<string | null>(null);
 
-  const showFeedback = (message: string, type: 'success' | 'error' = 'success') => {
+  const showFeedback = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
     setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3500);
+    setTimeout(() => setNotification(null), 4500);
   };
 
   const handleSaveSystemEmail = (e: React.FormEvent) => {
@@ -746,16 +746,24 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   };
 
   // 7. Delete User
-  const handleDeleteUser = (u: User) => {
+  const handleDeleteUser = async (u: User) => {
     if (currentUser?.id === u.id) {
       alert('Anda tidak dapat menghapus akun Anda sendiri yang sedang aktif.');
       return;
     }
 
-    if (confirm(`Apakah Anda yakin ingin menghapus akun "${u.name}" (${u.role})? Seluruh data profil pengguna ini akan dihapus dari sistem.`)) {
-      db.deleteUser(u.id);
-      onRefresh();
-      showFeedback(`Pengguna "${u.name}" berhasil dihapus.`);
+    if (confirm(`Apakah Anda yakin ingin menghapus akun "${u.name}" (${u.role})? Seluruh data profil pengguna ini akan dihapus permanen dari database.`)) {
+      try {
+        const res = await db.deleteUser(u.id);
+        onRefresh();
+        if (res.error) {
+          showFeedback(`Pengguna "${u.name}" dihapus, namun sinkronisasi database melaporkan: ${res.error}`, 'warning');
+        } else {
+          showFeedback(`Pengguna "${u.name}" berhasil dihapus permanen dari sistem.`);
+        }
+      } catch (err: any) {
+        showFeedback(`Gagal menghapus pengguna: ${err.message}`, 'error');
+      }
     }
   };
 
@@ -842,16 +850,20 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     setSelectedUserIds([]);
   };
 
-  const handleConfirmBulkDelete = () => {
+  const handleConfirmBulkDelete = async () => {
     if (selectedUserIds.length === 0) return;
     setIsDeletingBulk(true);
     try {
       const count = selectedUserIds.length;
-      db.bulkDeleteUsers(selectedUserIds);
+      const res = await db.bulkDeleteUsers(selectedUserIds);
       setSelectedUserIds([]);
       setShowBulkDeleteModal(false);
       onRefresh();
-      showFeedback(`Berhasil menghapus ${count} akun pengguna sekaligus dari sistem.`);
+      if (res.error) {
+        showFeedback(`Data ${count} pengguna dihapus lokal, namun backend mengembalikan: ${res.error}`, 'warning');
+      } else {
+        showFeedback(`Berhasil menghapus ${count} akun pengguna sekaligus secara permanen dari database.`);
+      }
     } catch (err: any) {
       showFeedback(`Gagal menghapus pengguna: ${err.message}`, 'error');
     } finally {
@@ -1061,12 +1073,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
           notification.type === 'success'
             ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+            : notification.type === 'warning'
+            ? 'bg-amber-50 border border-amber-200 text-amber-800'
             : 'bg-rose-50 border border-rose-200 text-rose-800'
         }`}>
           {notification.type === 'success' ? (
             <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
           ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <AlertCircle className={`w-4 h-4 shrink-0 ${notification.type === 'warning' ? 'text-amber-600' : 'text-rose-600'}`} />
           )}
           <span>{notification.message}</span>
         </div>
