@@ -479,13 +479,38 @@ class DatabaseService {
           this.state.categories = d.categories;
           updated = true;
         }
-        if (Array.isArray(d.reports) && d.reports.length > 0) {
-          this.state.reports = d.reports;
+        if (Array.isArray(d.reports)) {
+          // Merge with local reports so attachments and locally-cached updates are not lost
+          this.state.reports = d.reports.map((srvRep: Report) => {
+            const localRep = this.state.reports.find(r => r.id === srvRep.id);
+            const attachments = (srvRep.attachments && srvRep.attachments.length > 0)
+              ? srvRep.attachments
+              : (localRep?.attachments || []);
+            return {
+              ...srvRep,
+              attachments
+            };
+          });
+          // Also keep any local reports that have not yet reached the server
+          const serverReportIds = new Set(d.reports.map((r: any) => r.id));
+          const unsyncedReports = this.state.reports.filter(r => !serverReportIds.has(r.id));
+          if (unsyncedReports.length > 0) {
+            this.state.reports = [...unsyncedReports, ...this.state.reports];
+          }
           updated = true;
         }
-        if (Array.isArray(d.announcements) && d.announcements.length > 0) {
+        if (Array.isArray(d.announcements)) {
           this.state.announcements = d.announcements;
           updated = true;
+        }
+        if (Array.isArray(d.messages)) {
+          // Merge messages by id
+          const existingIds = new Set(this.state.messages.map(m => m.id));
+          const newMsgs = d.messages.filter((m: any) => !existingIds.has(m.id));
+          if (newMsgs.length > 0) {
+            this.state.messages.push(...newMsgs);
+            updated = true;
+          }
         }
 
         if (updated) {
@@ -511,6 +536,110 @@ class DatabaseService {
       return { success: false, isPostgres: false, message: err?.message || 'Gagal terhubung ke API' };
     }
     return { success: false, isPostgres: false, message: 'Tidak ada data dari server' };
+  }
+
+  /**
+   * Fetch announcements directly from API and update local state
+   */
+  public async fetchAnnouncements(): Promise<Announcement[]> {
+    try {
+      const res = await fetch('/api/announcements');
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list)) {
+          this.state.announcements = list;
+          this.saveToStorage();
+          this.notifyListeners();
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('fetchAnnouncements failed:', err);
+    }
+    return this.state.announcements || [];
+  }
+
+  /**
+   * Fetch report messages from API and merge into local state
+   */
+  public async fetchReportMessages(reportId: string): Promise<Message[]> {
+    try {
+      const res = await fetch(`/api/reports/${reportId}/messages`);
+      if (res.ok) {
+        const msgs = await res.json();
+        if (Array.isArray(msgs)) {
+          const otherMsgs = this.state.messages.filter(m => m.report_id !== reportId);
+          const msgMap = new Map<string, Message>();
+          this.state.messages.filter(m => m.report_id === reportId).forEach(m => msgMap.set(m.id, m));
+          msgs.forEach((m: Message) => msgMap.set(m.id, m));
+          this.state.messages = [...otherMsgs, ...Array.from(msgMap.values())];
+          this.saveToStorage();
+          this.notifyListeners();
+          return this.getMessages(reportId);
+        }
+      }
+    } catch (err) {
+      console.warn('fetchReportMessages failed:', err);
+    }
+    return this.getMessages(reportId);
+  }
+
+  /**
+   * Fetch single report detail from API including attachments and messages
+   */
+  public async fetchReportDetails(reportId: string, currentUser?: User | null): Promise<EnrichedReport | null> {
+    try {
+      const res = await fetch(`/api/reports/${reportId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.report) {
+          const idx = this.state.reports.findIndex(r => r.id === reportId);
+          const serverReport = data.report;
+          const localAttachments = idx !== -1 ? this.state.reports[idx].attachments : [];
+          const attachments = (serverReport.attachments && serverReport.attachments.length > 0)
+            ? serverReport.attachments
+            : (localAttachments || []);
+
+          const reportToSave: Report = {
+            id: serverReport.id,
+            report_code: serverReport.report_code,
+            student_id: serverReport.student_id,
+            category_id: serverReport.category_id,
+            assigned_to: serverReport.assigned_to,
+            assigned_teacher_id: serverReport.assigned_teacher_id,
+            title: serverReport.title,
+            description: serverReport.description,
+            urgency: serverReport.urgency,
+            privacy: serverReport.privacy,
+            status: serverReport.status,
+            attachments,
+            created_at: serverReport.created_at,
+            updated_at: serverReport.updated_at
+          };
+
+          if (idx !== -1) {
+            this.state.reports[idx] = reportToSave;
+          } else {
+            this.state.reports.unshift(reportToSave);
+          }
+
+          if (Array.isArray(data.messages)) {
+            const otherMsgs = this.state.messages.filter(m => m.report_id !== reportId);
+            const msgMap = new Map<string, Message>();
+            this.state.messages.filter(m => m.report_id === reportId).forEach(m => msgMap.set(m.id, m));
+            data.messages.forEach((m: Message) => msgMap.set(m.id, m));
+            this.state.messages = [...otherMsgs, ...Array.from(msgMap.values())];
+          }
+
+          this.saveToStorage();
+          this.notifyListeners();
+          return this.getReportById(reportId, currentUser || undefined);
+        }
+      }
+    } catch (err) {
+      console.warn('fetchReportDetails failed:', err);
+    }
+    return this.getReportById(reportId, currentUser || undefined);
   }
 
   /**
@@ -1033,14 +1162,18 @@ class DatabaseService {
     }
 
     this.saveToStorage();
+    this.notifyListeners();
     this.syncToServer('/api/reports', 'POST', {
+      id: newReport.id,
       userId: currentUser.id,
       category_id: data.category_id,
       assigned_to: data.assigned_to,
+      assigned_teacher_id: resolvedTeacherId || data.assigned_teacher_id || null,
       title: data.title,
       description: data.description,
       urgency: data.urgency,
-      privacy: data.privacy
+      privacy: data.privacy,
+      attachments: newReport.attachments || []
     });
     return this.enrichReport(newReport, currentUser);
   }
@@ -1320,6 +1453,12 @@ class DatabaseService {
   }
 
   // --- MESSAGES & CHAT PER REPORT ---
+  public getMessages(reportId: string): Message[] {
+    return this.state.messages
+      .filter(m => m.report_id === reportId)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  }
+
   public getMessagesByReportId(reportId: string, currentUser: User): Message[] {
     const messages = this.state.messages.filter(m => m.report_id === reportId);
     // Mark messages sent by others as read
@@ -1437,6 +1576,7 @@ class DatabaseService {
     }
 
     this.saveToStorage();
+    this.notifyListeners();
     this.syncToServer(`/api/reports/${reportId}/messages`, 'POST', {
       senderId: senderUser.id,
       message: text.trim()
@@ -2365,6 +2505,10 @@ class DatabaseService {
       // Non-blocking notification creation
     }
 
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer('/api/announcements', 'POST', newAnc);
+
     return newAnc;
   }
 
@@ -2374,6 +2518,8 @@ class DatabaseService {
     this.state.announcements = this.state.announcements.filter(a => a.id !== announcementId);
     if (this.state.announcements.length !== initialLen) {
       this.saveToStorage();
+      this.notifyListeners();
+      this.syncToServer(`/api/announcements/${announcementId}`, 'DELETE');
       return true;
     }
     return false;
@@ -2385,6 +2531,8 @@ class DatabaseService {
     if (!anc) return null;
     Object.assign(anc, data, { updated_at: new Date().toISOString() });
     this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/announcements/${announcementId}`, 'PUT', data);
     return anc;
   }
 

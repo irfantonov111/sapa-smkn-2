@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Inbox,
   Eye,
@@ -83,6 +83,23 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate }
   const myAssignedCount = useMemo(() => {
     return reports.filter(isReportAssignedToCurrentBK).length;
   }, [reports, teacherRecord]);
+
+  // Real-time synchronization with database & backend
+  useEffect(() => {
+    const unsub = db.subscribe(() => {
+      setRefreshTick(t => t + 1);
+    });
+
+    // Periodic sync every 4 seconds to catch new student reports and message changes
+    const interval = setInterval(async () => {
+      await db.syncFromBackend();
+    }, 4000);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
+  }, []);
 
   // Statistics
   const countNew = reports.filter(r => r.status === 'terkirim').length;

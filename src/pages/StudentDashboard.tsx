@@ -30,14 +30,39 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigate }
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   useEffect(() => {
-    if (currentUser) {
-      const list = db.getReports(currentUser);
-      setReports(list);
-      const teachers = db.getBkTeachers();
-      setBkTeachers(teachers);
-      const annList = db.getAnnouncements(currentUser);
-      setAnnouncements(annList);
-    }
+    const refreshData = () => {
+      if (currentUser) {
+        const list = db.getReports(currentUser);
+        setReports(list);
+        const teachers = db.getBkTeachers();
+        setBkTeachers(teachers);
+        const annList = db.getAnnouncements(currentUser);
+        setAnnouncements(annList);
+      }
+    };
+
+    refreshData();
+
+    // Fetch latest announcements and database state immediately
+    db.fetchAnnouncements().then(refreshData);
+    db.syncFromBackend().then(refreshData);
+
+    // Subscribe to local and background updates
+    const unsub = db.subscribe(refreshData);
+
+    // Periodic sync every 3.5 seconds to pull new announcements and report updates in real-time
+    const interval = setInterval(async () => {
+      await Promise.all([
+        db.fetchAnnouncements(),
+        db.syncFromBackend()
+      ]);
+      refreshData();
+    }, 3500);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
   }, [currentUser]);
 
   if (!currentUser) return null;

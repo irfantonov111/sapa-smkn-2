@@ -13,7 +13,6 @@ import {
   Sparkles,
   FileText,
   ArrowRight,
-  Download,
   Server,
   AlertTriangle,
   Info,
@@ -32,7 +31,6 @@ import { db } from '../services/db';
 import { AdminUsersTab } from '../components/admin/AdminUsersTab';
 import { AdminCategoriesTab } from '../components/admin/AdminCategoriesTab';
 import { AdminReportsTab } from '../components/admin/AdminReportsTab';
-import { exportReportsToExcel } from '../utils/exportReportsExcel';
 
 interface AdminDashboardProps {
   onNavigate: (tab: string, reportId?: string) => void;
@@ -126,26 +124,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const reports = rawTables.reports;
   const messages = rawTables.messages;
 
-  const [isExportingReports, setIsExportingReports] = useState(false);
-
-  const handleExportReports = () => {
-    if (!currentUser) return;
-    setIsExportingReports(true);
-    try {
-      const allReports = db.getReports(currentUser);
-      if (!allReports || allReports.length === 0) {
-        setResetMessage('Belum ada data laporan pengaduan yang dapat diekspor.');
-        return;
-      }
-      exportReportsToExcel(allReports, 'Data_Laporan_Pengaduan_SAPA_Lengkap');
-      setResetMessage(`Berhasil mengekspor ${allReports.length} data laporan pengaduan lengkap ke format Excel (.xlsx).`);
-    } catch (err: any) {
-      setResetMessage(`Gagal mengekspor data laporan: ${err?.message || 'Terjadi kesalahan'}`);
-    } finally {
-      setIsExportingReports(false);
-    }
-  };
-
   // Actively test live connection between backend (Vercel) and database provider (Supabase)
   const handleTestDatabase = async () => {
     setIsTestingDb(true);
@@ -180,19 +158,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             Database tersambung langsung ke Supabase. Seluruh perubahan akun pengguna, kelas, guru, dan pengaduan langsung tersimpan di cloud.
           </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={handleExportReports}
-            disabled={isExportingReports}
-            className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
-            title="Ekspor seluruh data laporan pengaduan siswa lengkap dari Kode, Tanggal, Judul & Kategori, Pelapor, Urgensi, Guru Pembimbing, hingga Status ke Excel (.xlsx)"
-          >
-            <Download className={`w-4 h-4 ${isExportingReports ? 'animate-spin' : ''}`} />
-            <span>{isExportingReports ? 'Mengekspor Laporan...' : 'Export Data Laporan (.xlsx)'}</span>
-          </button>
         </div>
       </div>
 

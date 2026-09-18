@@ -37,8 +37,7 @@ export const ReportChat: React.FC<ReportChatProps> = ({ report, currentUser, onM
   const loadMessages = () => {
     const list = db.getMessagesByReportId(report.id, currentUser);
     setMessages((prev) => {
-      // Only update state if count changed or different IDs to avoid jitter
-      if (prev.length !== list.length) {
+      if (prev.length !== list.length || (list.length > 0 && list[list.length - 1].id !== prev[prev.length - 1]?.id)) {
         return list;
       }
       return prev;
@@ -47,8 +46,27 @@ export const ReportChat: React.FC<ReportChatProps> = ({ report, currentUser, onM
 
   useEffect(() => {
     loadMessages();
-    const interval = setInterval(loadMessages, 5000);
-    return () => clearInterval(interval);
+
+    // Initial fetch from server
+    db.fetchReportMessages(report.id).then(() => {
+      loadMessages();
+    });
+
+    // Listen to local database changes
+    const unsubscribe = db.subscribe(() => {
+      loadMessages();
+    });
+
+    // Fast polling (2.5s) to sync new messages between Student and BK teacher in real time
+    const interval = setInterval(async () => {
+      await db.fetchReportMessages(report.id);
+      loadMessages();
+    }, 2500);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [report.id, currentUser.id]);
 
   useEffect(() => {
@@ -66,12 +84,15 @@ export const ReportChat: React.FC<ReportChatProps> = ({ report, currentUser, onM
     if (e) e.preventDefault();
     if (!inputText.trim() || isSending || isStudentChatLocked || isTeacherBlocked) return;
 
+    const textToSend = inputText.trim();
     setIsSending(true);
     try {
-      db.sendMessage(report.id, currentUser, inputText.trim());
+      db.sendMessage(report.id, currentUser, textToSend);
       setInputText('');
       loadMessages();
       if (onMessageSent) onMessageSent();
+      // Also fetch to guarantee server sync
+      db.fetchReportMessages(report.id);
     } catch (err) {
       console.error('Failed to send message', err);
     } finally {

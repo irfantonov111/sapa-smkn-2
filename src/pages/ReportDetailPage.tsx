@@ -82,6 +82,21 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({ reportId, on
 
   useEffect(() => {
     loadData();
+
+    // Fetch freshest data from server (including image attachments and status)
+    db.fetchReportDetails(reportId, currentUser).then((fresh) => {
+      if (fresh) {
+        setReport(fresh);
+        setHistory(db.getStatusHistory(fresh.id));
+      }
+    });
+
+    // Listen to database changes
+    const unsub = db.subscribe(() => {
+      loadData();
+    });
+
+    return () => unsub();
   }, [reportId, currentUser]);
 
   if (!currentUser) return null;

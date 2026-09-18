@@ -95,6 +95,29 @@ export const AnnouncementsPage: React.FC<AnnouncementsPageProps> = ({ onNavigate
     }
   }, [isBK]);
 
+  // Real-time synchronization for announcements across Guru and Siswa
+  useEffect(() => {
+    // Initial fetch from backend
+    db.fetchAnnouncements().then(() => {
+      setRefreshKey(k => k + 1);
+    });
+
+    // Subscribe to local/background updates
+    const unsub = db.subscribe(() => {
+      setRefreshKey(k => k + 1);
+    });
+
+    // Fast polling every 3 seconds to ensure student sees teacher's new announcement directly
+    const interval = setInterval(async () => {
+      await db.fetchAnnouncements();
+    }, 3000);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
+  }, []);
+
   // Teacher Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [formTitle, setFormTitle] = useState('');

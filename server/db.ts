@@ -813,13 +813,173 @@ export async function getAnnouncements(): Promise<any[]> {
       const res = await pool.query('SELECT * FROM announcements ORDER BY created_at DESC');
       return res.rows.map(r => ({
         ...r,
-        attachments: typeof r.attachments === 'string' ? JSON.parse(r.attachments) : (r.attachments || [])
+        attachments: typeof r.attachments === 'string' ? JSON.parse(r.attachments) : (r.attachments || []),
+        read_by: typeof r.read_by === 'string' ? JSON.parse(r.read_by) : (r.read_by || [])
       }));
     } catch {
       return [];
     }
   }
   return memoryStore.announcements;
+}
+
+export async function createAnnouncement(data: any): Promise<any> {
+  const id = data.id || `anc-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  const now = new Date().toISOString();
+  const newAnc = {
+    id,
+    title: data.title,
+    content: data.content,
+    author_id: data.author_id || data.author_user_id || 'system',
+    author_user_id: data.author_user_id || data.author_id || 'system',
+    author_name: data.author_name || 'Bimbingan Konseling',
+    author_role: data.author_role || 'Guru BK',
+    author_avatar: data.author_avatar || null,
+    target_grade: data.target_grade || 'all',
+    target_class_id: data.target_class_id || null,
+    target_class_name: data.target_class_name || null,
+    category: data.category || 'Bimbingan Konseling',
+    attachments: data.attachments || [],
+    link_url: data.link_url || null,
+    link_title: data.link_title || null,
+    image_url: data.image_url || null,
+    video_url: data.video_url || null,
+    read_by: data.read_by || [],
+    created_at: data.created_at || now,
+    updated_at: data.updated_at || now
+  };
+
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query(
+        `INSERT INTO announcements (
+          id, title, content, author_id, author_user_id, author_name, author_role, author_avatar,
+          target_grade, target_class_id, target_class_name, category, attachments, link_url, link_title,
+          image_url, video_url, read_by, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+        ) ON CONFLICT (id) DO UPDATE SET
+          title = EXCLUDED.title,
+          content = EXCLUDED.content,
+          target_grade = EXCLUDED.target_grade,
+          target_class_id = EXCLUDED.target_class_id,
+          target_class_name = EXCLUDED.target_class_name,
+          category = EXCLUDED.category,
+          attachments = EXCLUDED.attachments,
+          link_url = EXCLUDED.link_url,
+          link_title = EXCLUDED.link_title,
+          image_url = EXCLUDED.image_url,
+          video_url = EXCLUDED.video_url,
+          updated_at = EXCLUDED.updated_at`,
+        [
+          newAnc.id, newAnc.title, newAnc.content, newAnc.author_id, newAnc.author_user_id,
+          newAnc.author_name, newAnc.author_role, newAnc.author_avatar, newAnc.target_grade,
+          newAnc.target_class_id, newAnc.target_class_name, newAnc.category,
+          JSON.stringify(newAnc.attachments), newAnc.link_url, newAnc.link_title,
+          newAnc.image_url, newAnc.video_url, JSON.stringify(newAnc.read_by),
+          newAnc.created_at, newAnc.updated_at
+        ]
+      );
+    } catch (err) {
+      console.error('Failed to insert announcement into postgres:', err);
+    }
+  }
+
+  // Update memory store as well
+  const idx = memoryStore.announcements.findIndex((a: any) => a.id === id);
+  if (idx !== -1) {
+    memoryStore.announcements[idx] = newAnc;
+  } else {
+    memoryStore.announcements.unshift(newAnc);
+  }
+
+  return newAnc;
+}
+
+export async function deleteAnnouncement(id: string): Promise<boolean> {
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query('DELETE FROM announcements WHERE id = $1', [id]);
+    } catch (err) {
+      console.error('Failed to delete announcement from postgres:', err);
+    }
+  }
+  memoryStore.announcements = memoryStore.announcements.filter((a: any) => a.id !== id);
+  return true;
+}
+
+export async function updateAnnouncement(id: string, updates: any): Promise<any> {
+  const now = new Date().toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      if (updates.title || updates.content) {
+        await pool.query(
+          `UPDATE announcements SET
+            title = COALESCE($1, title),
+            content = COALESCE($2, content),
+            target_grade = COALESCE($3, target_grade),
+            target_class_id = COALESCE($4, target_class_id),
+            category = COALESCE($5, category),
+            link_url = COALESCE($6, link_url),
+            link_title = COALESCE($7, link_title),
+            image_url = COALESCE($8, image_url),
+            video_url = COALESCE($9, video_url),
+            attachments = CASE WHEN $10::text IS NOT NULL THEN $10::jsonb ELSE attachments END,
+            read_by = CASE WHEN $11::text IS NOT NULL THEN $11::jsonb ELSE read_by END,
+            updated_at = $12
+          WHERE id = $13`,
+          [
+            updates.title || null,
+            updates.content || null,
+            updates.target_grade || null,
+            updates.target_class_id || null,
+            updates.category || null,
+            updates.link_url || null,
+            updates.link_title || null,
+            updates.image_url || null,
+            updates.video_url || null,
+            updates.attachments ? JSON.stringify(updates.attachments) : null,
+            updates.read_by ? JSON.stringify(updates.read_by) : null,
+            now,
+            id
+          ]
+        );
+      }
+    } catch (err) {
+      console.error('Failed to update announcement in postgres:', err);
+    }
+  }
+
+  const anc = memoryStore.announcements.find((a: any) => a.id === id);
+  if (anc) {
+    Object.assign(anc, updates, { updated_at: now });
+    return anc;
+  }
+  return null;
+}
+
+export async function getAllMessages(): Promise<Message[]> {
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query('SELECT * FROM messages ORDER BY created_at ASC');
+      return res.rows;
+    } catch {
+      return [];
+    }
+  }
+  return memoryStore.messages;
+}
+
+export async function getReportMessages(reportId: string): Promise<Message[]> {
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query('SELECT * FROM messages WHERE report_id = $1 ORDER BY created_at ASC', [reportId]);
+      return res.rows;
+    } catch {
+      return [];
+    }
+  }
+  return memoryStore.messages.filter(m => m.report_id === reportId).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 }
 
 export async function getMoodChecks(): Promise<any[]> {
@@ -835,7 +995,7 @@ export async function getMoodChecks(): Promise<any[]> {
 }
 
 export async function getFullDatabaseState() {
-  const [users, students, teachers, classes, categories, reports, announcements, moodChecks] = await Promise.all([
+  const [users, students, teachers, classes, categories, reports, announcements, moodChecks, messages] = await Promise.all([
     getUsers(),
     getStudents(),
     getTeachers(),
@@ -843,7 +1003,8 @@ export async function getFullDatabaseState() {
     getCategories(),
     getReports(),
     getAnnouncements(),
-    getMoodChecks()
+    getMoodChecks(),
+    getAllMessages()
   ]);
   return {
     users,
@@ -853,6 +1014,7 @@ export async function getFullDatabaseState() {
     categories,
     reports,
     announcements,
+    messages,
     mood_checks: moodChecks,
     isPostgres: isPostgresConnected
   };
@@ -930,8 +1092,13 @@ export function enrichReport(
   const assignedTeacher = teachers.find(t => t.teacher_type === report.assigned_to);
   const assignedTeacherUser = assignedTeacher ? users.find(u => u.id === assignedTeacher.user_id) : null;
 
+  const attachments = typeof report.attachments === 'string'
+    ? (() => { try { return JSON.parse(report.attachments); } catch { return []; } })()
+    : (report.attachments || []);
+
   return {
     ...report,
+    attachments,
     category,
     student: {
       nis: isAnonymous ? 'RAHASIA' : (student?.nis || '-'),
@@ -974,7 +1141,12 @@ export async function getReports(filter?: {
     const mRes = await pool.query('SELECT * FROM messages');
     const tRes = await pool.query('SELECT * FROM teachers');
 
-    reports = rRes.rows;
+    reports = rRes.rows.map(r => ({
+      ...r,
+      attachments: typeof r.attachments === 'string'
+        ? (() => { try { return JSON.parse(r.attachments); } catch { return []; } })()
+        : (r.attachments || [])
+    }));
     categories = cRes.rows;
     students = sRes.rows;
     users = uRes.rows;
@@ -1032,6 +1204,10 @@ export async function getReportById(id: string): Promise<{
     const rRes = await pool.query('SELECT * FROM reports WHERE id = $1', [id]);
     rawReport = rRes.rows[0] || null;
     if (rawReport) {
+      rawReport.attachments = typeof rawReport.attachments === 'string'
+        ? (() => { try { return JSON.parse(rawReport.attachments); } catch { return []; } })()
+        : (rawReport.attachments || []);
+
       const cRes = await pool.query('SELECT * FROM categories');
       const sRes = await pool.query('SELECT * FROM students');
       const uRes = await pool.query('SELECT * FROM users');
@@ -1070,6 +1246,7 @@ export async function getReportById(id: string): Promise<{
 }
 
 export async function createReport(data: {
+  id?: string;
   userId: string;
   category_id: string;
   assigned_to: AssignedTo;
@@ -1078,6 +1255,7 @@ export async function createReport(data: {
   description: string;
   urgency: ReportUrgency;
   privacy: ReportPrivacy;
+  attachments?: any[];
 }): Promise<Report> {
   let studentId = 'std-1';
 
@@ -1095,7 +1273,8 @@ export async function createReport(data: {
 
   const reportCode = `AC-${String(parseInt(count, 10) + 1).padStart(5, '0')}`;
   const now = new Date().toISOString();
-  const reportId = `rep-${Date.now()}`;
+  const reportId = data.id || `rep-${Date.now()}`;
+  const attachments = data.attachments || [];
 
   const newReport: Report = {
     id: reportId,
@@ -1109,6 +1288,7 @@ export async function createReport(data: {
     urgency: data.urgency,
     privacy: data.privacy,
     status: 'terkirim',
+    attachments,
     created_at: now,
     updated_at: now
   };
@@ -1124,12 +1304,12 @@ export async function createReport(data: {
 
   if (isPostgresConnected && pool) {
     await pool.query(
-      `INSERT INTO reports (id, report_code, student_id, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      `INSERT INTO reports (id, report_code, student_id, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, status, attachments, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         newReport.id, newReport.report_code, newReport.student_id, newReport.category_id,
         newReport.assigned_to, newReport.assigned_teacher_id, newReport.title, newReport.description, newReport.urgency,
-        newReport.privacy, newReport.status, newReport.created_at, newReport.updated_at
+        newReport.privacy, newReport.status, JSON.stringify(attachments), newReport.created_at, newReport.updated_at
       ]
     );
     await pool.query(

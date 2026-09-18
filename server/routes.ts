@@ -44,7 +44,12 @@ import {
   updateClassDetails,
   deleteClassPermanently,
   updateCategoryDetails,
-  deleteCategoryPermanently
+  deleteCategoryPermanently,
+  getAnnouncements,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
+  getReportMessages
 } from './db';
 
 export const apiRouter = Router();
@@ -554,16 +559,63 @@ apiRouter.get('/teachers/bk', async (req: Request, res: Response) => {
   }
 });
 
+// Announcements CRUD endpoints
+apiRouter.get('/announcements', async (req: Request, res: Response) => {
+  try {
+    const list = await getAnnouncements();
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/announcements', async (req: Request, res: Response) => {
+  try {
+    const { title, content } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Judul dan isi pengumuman tidak boleh kosong' });
+    }
+    const created = await createAnnouncement(req.body);
+    res.status(201).json(created);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.put('/announcements/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updated = await updateAnnouncement(id, req.body);
+    if (!updated) {
+      return res.status(404).json({ error: 'Pengumuman tidak ditemukan' });
+    }
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.delete('/announcements/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await deleteAnnouncement(id);
+    res.json({ success: true, message: 'Pengumuman berhasil dihapus' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Create Report
 apiRouter.post('/reports', async (req: Request, res: Response) => {
   try {
-    const { userId, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy } = req.body;
+    const { id, userId, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, attachments } = req.body;
 
     if (!userId || !category_id || !assigned_to || !title || !description || !urgency || !privacy) {
       return res.status(400).json({ error: 'Field wajib belum lengkap diisi' });
     }
 
     const newReport = await createReport({
+      id,
       userId,
       category_id,
       assigned_to,
@@ -571,7 +623,8 @@ apiRouter.post('/reports', async (req: Request, res: Response) => {
       title,
       description,
       urgency,
-      privacy
+      privacy,
+      attachments: Array.isArray(attachments) ? attachments : []
     });
 
     res.status(201).json(newReport);
@@ -626,6 +679,17 @@ apiRouter.delete('/reports/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Laporan tidak ditemukan' });
     }
     res.json({ success: true, message: 'Laporan berhasil dihapus' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get messages for report
+apiRouter.get('/reports/:id/messages', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const messages = await getReportMessages(id);
+    res.json(messages);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
