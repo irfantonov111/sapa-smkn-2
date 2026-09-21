@@ -20,8 +20,13 @@ import {
   ReportAttachment,
   StudentMoodCheck,
   MoodType,
-  SystemSettings
+  SystemSettings,
+  CounselingAppointment,
+  CounselingAppointmentStatus,
+  CounselingType,
+  Gender
 } from '../types/database';
+import { getDefaultAvatarByGender, detectGenderFromName } from '../utils/avatar2d';
 
 import {
   INITIAL_CATEGORIES,
@@ -51,6 +56,46 @@ import {
 const STORAGE_PREFIX = 'sapa_db_v7_';
 const LEGACY_STORAGE_PREFIX = 'sapa_db_v6_';
 
+export const INITIAL_COUNSELING_APPOINTMENTS: CounselingAppointment[] = [
+  {
+    id: 'apt-1',
+    student_id: 'std-1',
+    student_user_id: 'usr-student-1',
+    student_name: 'Budi Santoso',
+    student_class_name: 'X RPL 1',
+    teacher_id: 'tch-bk-1',
+    teacher_user_id: 'usr-bk-1',
+    teacher_name: 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.',
+    requested_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    requested_time: '10:00',
+    topic: 'Konsultasi kesulitan fokus belajar dan rencana pemilihan peminatan kejuruan',
+    counseling_type: 'tatap_muka',
+    status: 'menunggu',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'apt-2',
+    student_id: 'std-2',
+    student_user_id: 'usr-student-2',
+    student_name: 'Siti Rahmawati',
+    student_class_name: 'X RPL 2',
+    teacher_id: 'tch-bk-1',
+    teacher_user_id: 'usr-bk-1',
+    teacher_name: 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.',
+    requested_date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+    requested_time: '09:30',
+    confirmed_date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+    confirmed_time: '13:30',
+    topic: 'Bimbingan adaptasi sosial dan manajemen stres menghadapi ujian',
+    counseling_type: 'tatap_muka',
+    status: 'dijadwalkan_ulang',
+    reschedule_reason: 'Mohon maaf pada pukul 09:30 ada rapat dinas kurikulum. Jadwal konseling disesuaikan ke jam 13:30 setelah istirahat kedua di Ruang BK ya.',
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    updated_at: new Date().toISOString()
+  }
+];
+
 interface DatabaseState {
   users: User[];
   students: Student[];
@@ -63,6 +108,7 @@ interface DatabaseState {
   notifications: Notification[];
   announcements: Announcement[];
   mood_checks: StudentMoodCheck[];
+  counseling_appointments?: CounselingAppointment[];
   system_settings?: SystemSettings;
 }
 
@@ -165,7 +211,7 @@ class DatabaseService {
               }
             });
           }
-          // Ensure student and teacher users have password_changed flag
+          // Ensure student and teacher users have password_changed flag, valid gender, and automatic avatar
           if (Array.isArray(parsed.users)) {
             parsed.users.forEach(u => {
               if (u.role === 'siswa' && u.password_changed === undefined) {
@@ -174,9 +220,15 @@ class DatabaseService {
               if (u.role === 'guru' && u.password_changed === undefined) {
                 u.password_changed = false;
               }
+              if (!u.gender) {
+                u.gender = detectGenderFromName(u.name);
+              }
+              if (!u.avatar || u.avatar.includes('unsplash.com') || u.avatar.includes('pravatar')) {
+                u.avatar = getDefaultAvatarByGender(u.role, u.gender);
+              }
             });
           }
-          // Ensure teacher NIPs are encrypted and assigned_class_ids are initialized
+          // Ensure teacher NIPs are encrypted, assigned_class_ids are initialized, and gender is synced
           if (Array.isArray(parsed.teachers)) {
             parsed.teachers.forEach((t: Teacher) => {
               if (t.nip && !isNipEncrypted(t.nip)) {
@@ -185,7 +237,16 @@ class DatabaseService {
               if (!t.assigned_class_ids) {
                 t.assigned_class_ids = [];
               }
+              if (!t.gender) {
+                const u = parsed.users?.find((usr: User) => usr.id === t.user_id);
+                t.gender = u?.gender || detectGenderFromName(u?.name || '');
+              }
             });
+          }
+
+          // Ensure counseling appointments are initialized
+          if (!Array.isArray(parsed.counseling_appointments) || parsed.counseling_appointments.length === 0) {
+            parsed.counseling_appointments = [...INITIAL_COUNSELING_APPOINTMENTS];
           }
 
           // Bidirectional sync: make sure any class bk_teacher_id is included in teacher.assigned_class_ids
@@ -216,12 +277,23 @@ class DatabaseService {
     }
 
     const defaultState: DatabaseState = {
-      users: [...INITIAL_USERS].map(u => ({
-        ...u,
-        password: u.password && !isPasswordEncrypted(u.password) ? hashPassword(u.password) : u.password
-      })),
+      users: [...INITIAL_USERS].map(u => {
+        const gender = u.gender || detectGenderFromName(u.name);
+        return {
+          ...u,
+          gender,
+          avatar: u.avatar || getDefaultAvatarByGender(u.role, gender),
+          password: u.password && !isPasswordEncrypted(u.password) ? hashPassword(u.password) : u.password
+        };
+      }),
       students: [...INITIAL_STUDENTS],
-      teachers: [...INITIAL_TEACHERS],
+      teachers: [...INITIAL_TEACHERS].map(t => {
+        const u = INITIAL_USERS.find(usr => usr.id === t.user_id);
+        return {
+          ...t,
+          gender: t.gender || u?.gender || detectGenderFromName(u?.name || '')
+        };
+      }),
       classes: [...INITIAL_CLASSES],
       categories: [...INITIAL_CATEGORIES],
       reports: [...INITIAL_REPORTS],
@@ -230,6 +302,7 @@ class DatabaseService {
       notifications: [...INITIAL_NOTIFICATIONS],
       announcements: [...INITIAL_ANNOUNCEMENTS],
       mood_checks: [...INITIAL_MOOD_CHECKS],
+      counseling_appointments: [...INITIAL_COUNSELING_APPOINTMENTS],
       system_settings: {
         reset_password_email: 'admin@smk.sch.id',
         school_name: 'SMK Negeri 1'
@@ -512,6 +585,10 @@ class DatabaseService {
             updated = true;
           }
         }
+        if (Array.isArray(d.counseling_appointments) && d.counseling_appointments.length > 0) {
+          this.state.counseling_appointments = d.counseling_appointments;
+          updated = true;
+        }
 
         if (updated) {
           this.saveToStorage();
@@ -730,6 +807,10 @@ class DatabaseService {
 
   public getStudentByUserId(userId: string): Student | undefined {
     return this.state.students.find(s => s.user_id === userId);
+  }
+
+  public getStudentById(id: string): Student | undefined {
+    return this.state.students.find(s => s.id === id);
   }
 
   public getTeacherByUserId(userId: string): Teacher | undefined {
@@ -2806,6 +2887,290 @@ class DatabaseService {
       return true;
     }
     return false;
+  }
+
+  // --- COUNSELING APPOINTMENTS ---
+  public getCounselingAppointments(filter?: {
+    student_id?: string;
+    student_user_id?: string;
+    teacher_id?: string;
+    teacher_user_id?: string;
+    status?: CounselingAppointmentStatus;
+  }): CounselingAppointment[] {
+    if (!this.state.counseling_appointments) {
+      this.state.counseling_appointments = [...INITIAL_COUNSELING_APPOINTMENTS];
+    }
+    let list = [...this.state.counseling_appointments];
+    if (filter?.student_id) {
+      list = list.filter(a => a.student_id === filter.student_id);
+    }
+    if (filter?.student_user_id) {
+      list = list.filter(a => a.student_user_id === filter.student_user_id);
+    }
+    if (filter?.teacher_id) {
+      list = list.filter(a => a.teacher_id === filter.teacher_id);
+    }
+    if (filter?.teacher_user_id) {
+      list = list.filter(a => a.teacher_user_id === filter.teacher_user_id);
+    }
+    if (filter?.status) {
+      list = list.filter(a => a.status === filter.status);
+    }
+    return list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  }
+
+  public createCounselingAppointment(
+    studentUser: User,
+    data: {
+      teacher_id: string;
+      requested_date: string;
+      requested_time: string;
+      topic: string;
+      counseling_type?: CounselingType;
+    }
+  ): CounselingAppointment {
+    if (!this.state.counseling_appointments) {
+      this.state.counseling_appointments = [];
+    }
+
+    const student = this.getStudentByUserId(studentUser.id);
+    const teacher = this.state.teachers.find(t => t.id === data.teacher_id || t.user_id === data.teacher_id);
+    const teacherUser = teacher ? this.getUserById(teacher.user_id) : null;
+    const studentClass = student?.class_id ? this.getClassById(student.class_id) : null;
+
+    const now = new Date().toISOString();
+    const newAppointment: CounselingAppointment = {
+      id: `apt-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      student_id: student?.id || studentUser.id,
+      student_user_id: studentUser.id,
+      student_name: studentUser.name,
+      student_class_name: studentClass?.name || 'Siswa SMK',
+      teacher_id: teacher?.id || data.teacher_id,
+      teacher_user_id: teacherUser?.id || teacher?.user_id || '',
+      teacher_name: teacherUser?.name || 'Guru BK',
+      requested_date: data.requested_date,
+      requested_time: data.requested_time,
+      topic: data.topic,
+      counseling_type: data.counseling_type || 'tatap_muka',
+      status: 'menunggu',
+      created_at: now,
+      updated_at: now
+    };
+
+    this.state.counseling_appointments.unshift(newAppointment);
+
+    // Send notification to the teacher
+    if (teacherUser) {
+      this.state.notifications.unshift({
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        user_id: teacherUser.id,
+        title: 'Permintaan Jadwal Konseling Baru',
+        message: `${studentUser.name} (${studentClass?.name || 'Siswa'}) mengajukan janji konseling pada ${data.requested_date} jam ${data.requested_time}.`,
+        is_read: false,
+        created_at: now
+      });
+    }
+
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer('/api/counseling/appointments', 'POST', newAppointment);
+
+    return newAppointment;
+  }
+
+  public acceptCounselingAppointment(
+    appointmentId: string,
+    teacherUser: User,
+    notes?: string
+  ): CounselingAppointment {
+    if (!this.state.counseling_appointments) {
+      this.state.counseling_appointments = [];
+    }
+    const apt = this.state.counseling_appointments.find(a => a.id === appointmentId);
+    if (!apt) {
+      throw new Error('Jadwal konseling tidak ditemukan');
+    }
+
+    const now = new Date().toISOString();
+    apt.status = 'disetujui';
+    apt.confirmed_date = apt.requested_date;
+    apt.confirmed_time = apt.requested_time;
+    if (notes !== undefined) apt.notes = notes;
+    apt.updated_at = now;
+
+    // Send notification to student
+    this.state.notifications.unshift({
+      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      user_id: apt.student_user_id,
+      title: 'Janji Konseling Disetujui Guru BK',
+      message: `Permintaan jadwal konselingmu telah disetujui oleh ${teacherUser.name} untuk tanggal ${apt.confirmed_date} pukul ${apt.confirmed_time}. Silakan hadir tepat waktu ya.`,
+      is_read: false,
+      created_at: now
+    });
+
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}/accept`, 'PATCH', { notes });
+
+    return apt;
+  }
+
+  public rescheduleCounselingAppointment(
+    appointmentId: string,
+    teacherUser: User,
+    newDate: string,
+    newTime: string,
+    reason: string
+  ): CounselingAppointment {
+    if (!this.state.counseling_appointments) {
+      this.state.counseling_appointments = [];
+    }
+    const apt = this.state.counseling_appointments.find(a => a.id === appointmentId);
+    if (!apt) {
+      throw new Error('Jadwal konseling tidak ditemukan');
+    }
+
+    const now = new Date().toISOString();
+    apt.status = 'dijadwalkan_ulang';
+    apt.confirmed_date = newDate;
+    apt.confirmed_time = newTime;
+    apt.reschedule_reason = reason;
+    apt.updated_at = now;
+
+    // Send notification to student with new time and reason
+    this.state.notifications.unshift({
+      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      user_id: apt.student_user_id,
+      title: 'Jadwal Konseling Diubah oleh Guru BK',
+      message: `${teacherUser.name} menyesuaikan jadwal konselingmu menjadi ${newDate} pukul ${newTime}. Alasan: "${reason}".`,
+      is_read: false,
+      created_at: now
+    });
+
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}/reschedule`, 'PATCH', {
+      newDate,
+      newTime,
+      reason
+    });
+
+    return apt;
+  }
+
+  public completeCounselingAppointment(
+    appointmentId: string,
+    teacherUser: User,
+    notes?: string
+  ): CounselingAppointment {
+    if (!this.state.counseling_appointments) {
+      this.state.counseling_appointments = [];
+    }
+    const apt = this.state.counseling_appointments.find(a => a.id === appointmentId);
+    if (!apt) {
+      throw new Error('Jadwal konseling tidak ditemukan');
+    }
+
+    const now = new Date().toISOString();
+    apt.status = 'selesai';
+    if (notes !== undefined) apt.notes = notes;
+    apt.updated_at = now;
+
+    // Notification to student
+    this.state.notifications.unshift({
+      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      user_id: apt.student_user_id,
+      title: 'Sesi Konseling Selesai',
+      message: `Sesi konseling bersama ${teacherUser.name} telah selesai dilaksanakan. Terima kasih atas keterbukaanmu.`,
+      is_read: false,
+      created_at: now
+    });
+
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}/complete`, 'PATCH', { notes });
+
+    return apt;
+  }
+
+  public cancelCounselingAppointment(
+    appointmentId: string,
+    user: User,
+    reason?: string
+  ): CounselingAppointment {
+    if (!this.state.counseling_appointments) {
+      this.state.counseling_appointments = [];
+    }
+    const apt = this.state.counseling_appointments.find(a => a.id === appointmentId);
+    if (!apt) {
+      throw new Error('Jadwal konseling tidak ditemukan');
+    }
+
+    const now = new Date().toISOString();
+    apt.status = 'dibatalkan';
+    if (reason) apt.reschedule_reason = reason;
+    apt.updated_at = now;
+
+    // Notify counterpart
+    const targetUserId = user.id === apt.student_user_id ? apt.teacher_user_id : apt.student_user_id;
+    if (targetUserId) {
+      this.state.notifications.unshift({
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        user_id: targetUserId,
+        title: 'Jadwal Konseling Dibatalkan',
+        message: `Janji konseling untuk ${apt.student_name} telah dibatalkan.${reason ? ` Alasan: ${reason}` : ''}`,
+        is_read: false,
+        created_at: now
+      });
+    }
+
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}/cancel`, 'PATCH', { reason });
+
+    return apt;
+  }
+
+  public async fetchCounselingAppointments(): Promise<CounselingAppointment[]> {
+    try {
+      const res = await fetch('/api/counseling/appointments');
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list)) {
+          this.state.counseling_appointments = list;
+          this.saveToStorage();
+          this.notifyListeners();
+          return list;
+        }
+      }
+    } catch {
+      // Ignore network errors, fall back to local
+    }
+    return this.getCounselingAppointments();
+  }
+
+  // Set gender and auto update avatar
+  public updateUserGender(userId: string, gender: Gender): boolean {
+    const user = this.state.users.find(u => u.id === userId);
+    if (!user) return false;
+
+    user.gender = gender;
+    user.avatar = getDefaultAvatarByGender(user.role, gender);
+
+    // Also sync teacher record if exists
+    const teacher = this.state.teachers.find(t => t.user_id === userId);
+    if (teacher) {
+      teacher.gender = gender;
+    }
+
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/users/${userId}`, 'PUT', {
+      gender,
+      avatar: user.avatar
+    });
+
+    return true;
   }
 }
 

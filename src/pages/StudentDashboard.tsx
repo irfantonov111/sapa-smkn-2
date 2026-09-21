@@ -18,6 +18,7 @@ import { CategoryIcon, StatusBadge, UrgencyBadge, PrivacyBadge } from '../compon
 import { StatusTimeline } from '../components/StatusTimeline';
 import { BkTeachersDashboardSection } from '../components/BkTeacherComponents';
 import { StudentMoodCheckCard } from '../components/StudentMoodCheckCard';
+import { StudentCounselingSection } from '../components/StudentCounselingSection';
 
 interface StudentDashboardProps {
   onNavigate: (tab: string, reportId?: string, extraParam?: string) => void;
@@ -147,6 +148,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigate }
 
       {/* Absensi Mood Check Siswa Harian */}
       <StudentMoodCheckCard />
+
+      {/* Janji Temu Konseling Siswa */}
+      <StudentCounselingSection onNavigate={onNavigate} />
 
       {/* 4 Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">

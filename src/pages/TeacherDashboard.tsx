@@ -21,7 +21,9 @@ import {
   Square,
   Megaphone,
   Heart,
-  HeartHandshake
+  HeartHandshake,
+  Paperclip,
+  CalendarDays
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -30,6 +32,7 @@ import { CategoryIcon, StatusBadge, UrgencyBadge, PrivacyBadge } from '../compon
 import { EnrichedReport } from '../types/database';
 import { DeleteReportModal } from '../components/DeleteReportModal';
 import { BulkDeleteReportModal } from '../components/BulkDeleteReportModal';
+import { TeacherCounselingTab } from '../components/TeacherCounselingTab';
 
 interface TeacherDashboardProps {
   onNavigate: (tab: string, reportId?: string) => void;
@@ -60,29 +63,90 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate }
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
 
+  // Tab switcher: 'reports' or 'counseling'
+  const [activeDashboardTab, setActiveDashboardTab] = useState<'reports' | 'counseling'>('reports');
+
   const categories = db.getCategories();
   const classes = db.getClasses();
   const reports = useMemo(() => {
     return currentUser ? db.getReports(currentUser) : [];
   }, [currentUser, refreshTick]);
 
-  const isBK = teacherProfile?.teacher_type === 'guru_bk';
-  const teacherRecord = currentUser ? db.getTeacherByUserId(currentUser.id) : null;
+  const teacherRecord = useMemo(() => {
+    return currentUser ? db.getTeacherByUserId(currentUser.id) : null;
+  }, [currentUser, refreshTick]);
 
-  // Helper to check if a report was assigned to this specific BK teacher by student choice
+  const isBK =
+    teacherProfile?.teacher_type === 'guru_bk' ||
+    teacherRecord?.teacher_type === 'guru_bk';
+
+  // Helper to check if a report was assigned to this specific BK teacher by student choice or class allocation
   const isReportAssignedToCurrentBK = (rep: EnrichedReport) => {
-    if (!teacherRecord) return false;
-    return (
-      rep.assigned_teacher_id === teacherRecord.id ||
-      rep.assigned_teacher_id === teacherRecord.user_id ||
-      rep.assigned_teacher?.teacher_id === teacherRecord.id ||
-      rep.assigned_teacher?.user_id === teacherRecord.user_id
-    );
+    const currentTeacherId = teacherProfile?.id || teacherRecord?.id;
+    const currentUserId = currentUser?.id || teacherProfile?.user_id || teacherRecord?.user_id;
+    const currentName = currentUser?.name;
+
+    if (!currentTeacherId && !currentUserId) return false;
+
+    // Check direct ID assignment
+    if (rep.assigned_teacher_id) {
+      if (
+        (currentTeacherId && rep.assigned_teacher_id === currentTeacherId) ||
+        (currentUserId && rep.assigned_teacher_id === currentUserId)
+      ) {
+        return true;
+      }
+    }
+
+    // Check enriched assigned_teacher metadata
+    if (rep.assigned_teacher) {
+      if (
+        (currentTeacherId && rep.assigned_teacher.teacher_id === currentTeacherId) ||
+        (currentUserId && rep.assigned_teacher.user_id === currentUserId)
+      ) {
+        return true;
+      }
+      if (currentName && rep.assigned_teacher.specific_name) {
+        if (
+          rep.assigned_teacher.specific_name.trim().toLowerCase() ===
+          currentName.trim().toLowerCase()
+        ) {
+          return true;
+        }
+      }
+    }
+
+    // Check student's class BK teacher mapping if unassigned explicitly
+    if (rep.assigned_to === 'guru_bk' && !rep.assigned_teacher_id && rep.student_id) {
+      const student = db.getStudentById(rep.student_id);
+      if (student?.class_id) {
+        const cls = db.getClassById(student.class_id);
+        if (cls?.bk_teacher_id && currentTeacherId && cls.bk_teacher_id === currentTeacherId) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   };
 
   const myAssignedCount = useMemo(() => {
     return reports.filter(isReportAssignedToCurrentBK).length;
-  }, [reports, teacherRecord]);
+  }, [reports, teacherRecord, teacherProfile, currentUser]);
+
+  // Counseling appointments for this teacher
+  const counselingAppointments = useMemo(() => {
+    const teacherId = teacherProfile?.id || teacherRecord?.id;
+    const teacherUserId = currentUser?.id;
+    return db.getCounselingAppointments({
+      teacher_id: teacherId,
+      teacher_user_id: teacherUserId
+    });
+  }, [teacherProfile, teacherRecord, currentUser, refreshTick]);
+
+  const pendingCounselingCount = useMemo(() => {
+    return counselingAppointments.filter((a) => a.status === 'menunggu').length;
+  }, [counselingAppointments]);
 
   // Real-time synchronization with database & backend
   useEffect(() => {
@@ -305,6 +369,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate }
               <span>Pengumuman Siswa</span>
             </button>
 
+            {isBK && (
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveDashboardTab(activeDashboardTab === 'counseling' ? 'reports' : 'counseling')
+                }
+                className={`flex-1 sm:flex-initial px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                  activeDashboardTab === 'counseling'
+                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 ring-2 ring-white'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                }`}
+              >
+                <CalendarDays className="w-4 h-4 shrink-0" />
+                <span>{activeDashboardTab === 'counseling' ? 'Lihat Laporan Siswa' : 'Jadwal Konseling'}</span>
+                {pendingCounselingCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold animate-pulse">
+                    {pendingCounselingCount} Baru
+                  </span>
+                )}
+              </button>
+            )}
+
             <div className="w-full sm:w-auto bg-white/10 border border-white/15 backdrop-blur rounded-xl sm:rounded-2xl p-3 sm:p-4 text-left">
               <span className="text-[11px] text-blue-200 block font-medium">Kewenangan Akses:</span>
               <p className="text-xs font-bold text-white mt-0.5">
@@ -355,7 +441,54 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate }
         </div>
       </div>
 
-      {/* BK Teacher Active Status Section */}
+      {/* Tab Navigation for BK Teacher: Laporan Pengaduan vs Jadwal Konseling */}
+      {isBK && (
+        <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-2xl w-fit">
+          <button
+            type="button"
+            onClick={() => setActiveDashboardTab('reports')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              activeDashboardTab === 'reports'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Inbox className="w-4 h-4 text-blue-600" />
+            <span>Daftar Laporan Siswa</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-extrabold">
+              {reports.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveDashboardTab('counseling')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              activeDashboardTab === 'counseling'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4 text-indigo-600" />
+            <span>Jadwal Konseling Siswa</span>
+            {pendingCounselingCount > 0 ? (
+              <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold animate-pulse">
+                {pendingCounselingCount} Baru
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
+                {counselingAppointments.length}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {activeDashboardTab === 'counseling' ? (
+        <TeacherCounselingTab onNavigate={onNavigate} />
+      ) : (
+        <>
+          {/* BK Teacher Active Status Section */}
       {isBK && teacherRecord && (
         <div
           className={`rounded-3xl p-5 sm:p-6 border shadow-xs transition-all ${
@@ -854,9 +987,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate }
 
                       <td className="p-3.5 max-w-xs">
                         <p className="font-bold text-slate-900 line-clamp-1">{rep.title}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className="text-[11px] text-slate-500">{rep.student?.name}</span>
                           <PrivacyBadge privacy={rep.privacy} />
+                          {rep.attachments && rep.attachments.length > 0 && (
+                            <span
+                              title={`${rep.attachments.length} berkas bukti dilampirkan siswa`}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold"
+                            >
+                              <Paperclip className="w-3 h-3 text-amber-700" />
+                              <span>{rep.attachments.length} Berkas</span>
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -1004,6 +1146,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate }
                       )}
                       <span>•</span>
                       <PrivacyBadge privacy={rep.privacy} />
+                      {rep.attachments && rep.attachments.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                          <Paperclip className="w-3 h-3 text-amber-700" />
+                          <span>{rep.attachments.length} Berkas</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1068,6 +1216,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate }
           )}
         </div>
       </div>
+        </>
+      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteReportModal

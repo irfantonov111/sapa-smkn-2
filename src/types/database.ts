@@ -4,6 +4,7 @@ export type ReportUrgency = 'rendah' | 'sedang' | 'tinggi';
 export type ReportPrivacy = 'terbuka' | 'terbatas' | 'anonim';
 export type ReportStatus = 'terkirim' | 'dibaca' | 'direspons' | 'ditindaklanjuti' | 'selesai';
 export type AssignedTo = 'guru_bk' | 'wali_kelas';
+export type Gender = 'L' | 'P';
 
 export interface User {
   id: string;
@@ -11,6 +12,7 @@ export interface User {
   email: string;
   password?: string;
   role: UserRole;
+  gender?: Gender;
   avatar?: string;
   phone?: string;
   created_at: string;
@@ -57,6 +59,7 @@ export interface Teacher {
   user_id: string;
   nip: string;
   teacher_type: TeacherType;
+  gender?: Gender;
   specialization?: string;
   room?: string;
   bio?: string;
@@ -72,6 +75,7 @@ export interface BkTeacherProfile {
   name: string;
   nip: string;
   email: string;
+  gender?: Gender;
   avatar?: string;
   phone?: string;
   specialization: string;
@@ -188,7 +192,7 @@ export interface ReportStatusHistory {
 export interface Notification {
   id: string;
   user_id: string;
-  report_id: string;
+  report_id?: string | null;
   title: string;
   message: string;
   is_read: boolean;
@@ -222,4 +226,51 @@ export interface SystemSettings {
   school_name: string;
   support_phone?: string;
   updated_at?: string;
+}
+
+export type CounselingAppointmentStatus =
+  | 'menunggu'
+  | 'disetujui'
+  | 'dijadwalkan_ulang'
+  | 'selesai'
+  | 'dibatalkan';
+
+export type CounselingType = 'tatap_muka' | 'online_chat';
+
+export interface CounselingAppointment {
+  id: string;
+  student_id: string;
+  student_user_id: string;
+  student_name: string;
+  student_class_name?: string;
+  teacher_id: string;
+  teacher_user_id: string;
+  teacher_name: string;
+  requested_date: string;       // YYYY-MM-DD
+  requested_time: string;       // e.g. "09:30"
+  confirmed_date?: string;      // Tanggal definitif / reschedule jika diubah guru
+  confirmed_time?: string;      // Jam definitif / reschedule jika diubah guru
+  topic: string;                // Keperluan / topik bimbingan
+  counseling_type: CounselingType;
+  status: CounselingAppointmentStatus;
+  reschedule_reason?: string;   // Alasan perubahan waktu jika guru berhalangan
+  notes?: string;               // Catatan konseling guru BK
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabaseState {
+  users: User[];
+  students: Student[];
+  teachers: Teacher[];
+  classes: SchoolClass[];
+  categories: Category[];
+  reports: Report[];
+  messages: Message[];
+  status_history: ReportStatusHistory[];
+  notifications: Notification[];
+  announcements: Announcement[];
+  mood_checks: StudentMoodCheck[];
+  counseling_appointments?: CounselingAppointment[];
+  system_settings: SystemSettings;
 }

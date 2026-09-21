@@ -42,7 +42,7 @@ interface ProfilePageProps {
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({ onNavigate }) => {
-  const { currentUser, studentProfile, teacherProfile, logout, quickLoginAs, updateCurrentUserAvatar } = useAuth();
+  const { currentUser, studentProfile, teacherProfile, logout, quickLoginAs, updateCurrentUserAvatar, refreshUser } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -105,6 +105,27 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onNavigate }) => {
     if (!canUploadPhoto) return;
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileChange(e.dataTransfer.files[0]);
+    }
+  };
+
+  const currentGender: 'L' | 'P' =
+    (currentUser.gender as 'L' | 'P') ||
+    (isStudent ? (studentProfile?.gender as 'L' | 'P') : (teacherProfile?.gender as 'L' | 'P')) ||
+    'L';
+
+  const [genderSuccessMessage, setGenderSuccessMessage] = useState<string | null>(null);
+
+  const handleGenderChange = (newGender: 'L' | 'P') => {
+    if (newGender === currentGender) return;
+    try {
+      db.updateUserGender(currentUser.id, newGender);
+      refreshUser();
+      setGenderSuccessMessage(
+        `Jenis kelamin berhasil diubah ke ${newGender === 'L' ? 'Laki-laki' : 'Perempuan'}. Avatar resmi akun Anda otomatis disesuaikan.`
+      );
+      setTimeout(() => setGenderSuccessMessage(null), 4000);
+    } catch (err: any) {
+      console.error('Failed to change gender', err);
     }
   };
 
@@ -269,6 +290,82 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onNavigate }) => {
             </div>
           </div>
         )}
+
+        {/* Pilihan Jenis Kelamin (Gender Selection with Auto Avatar Switch) */}
+        <div className="mt-6 pt-5 border-t border-slate-100 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-blue-600" />
+              Pengaturan Jenis Kelamin (Gender):
+            </span>
+            <span className="text-[11px] text-slate-400 font-medium">
+              Avatar resmi akun akan otomatis disesuaikan dengan jenis kelamin
+            </span>
+          </div>
+
+          {genderSuccessMessage && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{genderSuccessMessage}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 max-w-xl gap-3">
+            <button
+              type="button"
+              onClick={() => handleGenderChange('L')}
+              className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition cursor-pointer text-left ${
+                currentGender === 'L'
+                  ? 'bg-blue-50/90 border-blue-400 ring-2 ring-blue-300 shadow-xs'
+                  : 'bg-slate-50/70 border-slate-200 hover:border-blue-300 hover:bg-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                  👦 L
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900">Laki-laki (L)</p>
+                  <span className="text-[11px] text-slate-500">
+                    {isStudent ? 'Siswa Laki-laki SMK' : 'Bapak Guru / Staf'}
+                  </span>
+                </div>
+              </div>
+              {currentGender === 'L' && (
+                <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </div>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleGenderChange('P')}
+              className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition cursor-pointer text-left ${
+                currentGender === 'P'
+                  ? 'bg-pink-50/90 border-pink-400 ring-2 ring-pink-300 shadow-xs'
+                  : 'bg-slate-50/70 border-slate-200 hover:border-pink-300 hover:bg-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-xs shrink-0">
+                  👧 P
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900">Perempuan (P)</p>
+                  <span className="text-[11px] text-slate-500">
+                    {isStudent ? 'Siswi Perempuan SMK' : 'Ibu Guru / Staf'}
+                  </span>
+                </div>
+              </div>
+              {currentGender === 'P' && (
+                <div className="w-5 h-5 rounded-full bg-pink-600 text-white flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </div>
+              )}
+            </button>
+          </div>
+        </div>
 
         {/* Pilihan Avatar Profil Resmi */}
         <div className="mt-6 pt-5 border-t border-slate-100">

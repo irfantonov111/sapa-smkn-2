@@ -168,3 +168,43 @@ export const TEACHER_ADMIN_AVATAR_OPTIONS: AvatarOption[] = [
     url: AVATAR_2D_TEACHER_FEMALE
   }
 ];
+
+/**
+ * Returns the automatic 2D avatar corresponding to role and gender.
+ * Teachers/Admins: AVATAR_2D_TEACHER_MALE for 'L', AVATAR_2D_TEACHER_FEMALE for 'P'.
+ * Students: AVATAR_2D_STUDENT_MALE for 'L', AVATAR_2D_STUDENT_FEMALE for 'P'.
+ */
+export function getDefaultAvatarByGender(
+  role: 'siswa' | 'guru' | 'admin',
+  gender?: 'L' | 'P' | 'Laki-laki' | 'Perempuan' | string
+): string {
+  const isFemale = gender === 'P' || gender === 'Perempuan' || (typeof gender === 'string' && gender.toLowerCase().startsWith('p'));
+  if (role === 'siswa') {
+    return isFemale ? AVATAR_2D_STUDENT_FEMALE : AVATAR_2D_STUDENT_MALE;
+  }
+  return isFemale ? AVATAR_2D_TEACHER_FEMALE : AVATAR_2D_TEACHER_MALE;
+}
+
+/**
+ * Heuristic helper to deduce gender from Indonesian name if gender field was omitted in legacy data
+ */
+export function detectGenderFromName(name: string): 'L' | 'P' {
+  const lower = name.toLowerCase();
+  const femaleIndicators = [
+    'siti', 'nur', 'dewi', 'putri', 'ayu', 'retno', 'tri', 'lestari', 'indah',
+    'ani', 'rina', 'ratih', 'fitri', 'anita', 'wulandari', 'kusuma', 'sari',
+    'wahyuni', 'dian', 'endang', 'rahayu', 'yuni', 'kartika', 'lia', 'maya',
+    'fatimah', 'aisyah', 'zahra', 'novita', 'eka', 'susanti', 'handayani',
+    'rahma', 'widya', 'hartini', 'sulastri', 'ningsih', 'marina', 'intan'
+  ];
+
+  for (const ind of femaleIndicators) {
+    // Check word boundary or substring
+    const regex = new RegExp(`\\b${ind}\\b`, 'i');
+    if (regex.test(lower)) {
+      return 'P';
+    }
+  }
+
+  return 'L';
+}

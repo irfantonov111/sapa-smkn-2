@@ -57,11 +57,11 @@ export const ReportChat: React.FC<ReportChatProps> = ({ report, currentUser, onM
       loadMessages();
     });
 
-    // Fast polling (2.5s) to sync new messages between Student and BK teacher in real time
+    // Fast polling (1.5s) to sync new messages between Student and BK teacher in real time
     const interval = setInterval(async () => {
       await db.fetchReportMessages(report.id);
       loadMessages();
-    }, 2500);
+    }, 1500);
 
     return () => {
       unsubscribe();
@@ -109,7 +109,7 @@ export const ReportChat: React.FC<ReportChatProps> = ({ report, currentUser, onM
   ];
 
   return (
-    <div className="flex flex-col h-[520px] bg-slate-50/50 rounded-2xl border border-slate-200 overflow-hidden">
+    <div className="flex flex-col h-[480px] sm:h-[520px] max-h-[80vh] bg-slate-50/50 rounded-2xl border border-slate-200 overflow-hidden">
       {/* Header */}
       <div className="px-5 py-3.5 bg-white border-b border-slate-200 flex items-center justify-between">
         <div>

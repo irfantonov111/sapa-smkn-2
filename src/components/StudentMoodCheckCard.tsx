@@ -142,7 +142,6 @@ export const StudentMoodCheckCard: React.FC = () => {
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>(['Tenang']);
   const [selectedTrigger, setSelectedTrigger] = useState<string>('Pelajaran & Tugas Sekolah');
   const [note, setNote] = useState('');
-  const [needsCounseling, setNeedsCounseling] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -160,7 +159,6 @@ export const StudentMoodCheckCard: React.FC = () => {
       setSelectedEmotions(today.emotions || []);
       setSelectedTrigger(today.trigger || 'Pelajaran & Tugas Sekolah');
       setNote(today.note || '');
-      setNeedsCounseling(today.needs_counseling);
     }
   };
 
@@ -198,7 +196,7 @@ export const StudentMoodCheckCard: React.FC = () => {
         emotions: selectedEmotions.length > 0 ? selectedEmotions : ['Biasa Saja'],
         trigger: selectedTrigger,
         note: note.trim(),
-        needs_counseling: needsCounseling
+        needs_counseling: false
       });
 
       if (res.success) {
@@ -206,9 +204,7 @@ export const StudentMoodCheckCard: React.FC = () => {
         setIsEditing(false);
         setFeedbackMsg({
           type: 'success',
-          text: needsCounseling
-            ? 'Absensi mood berhasil dikirim. Guru BK kelas Anda telah menerima permohonan konseling.'
-            : 'Absensi mood harianmu berhasil dicatat. Terima kasih sudah jujur dengan perasaanmu!'
+          text: 'Absensi mood harianmu berhasil dicatat. Terima kasih sudah jujur dengan perasaanmu!'
         });
         refreshMoodData();
       }
@@ -378,25 +374,13 @@ export const StudentMoodCheckCard: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Counseling Status Alert */}
-                  {todayMood.needs_counseling ? (
-                    <div className="bg-amber-100/80 border border-amber-300 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-900">
-                      <UserCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-bold">Permohonan Konseling Aktif:</p>
-                        <p className="text-amber-800 text-[11px] mt-0.5">
-                          Anda mencentang butuh diajak ngobrol/konseling. Guru BK kelas telah menerima notifikasi khusus dan akan menjadwalkan sesi berbincang santai secara privat dengan Anda.
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-3 flex items-center gap-2.5 text-xs text-blue-900">
-                      <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
-                      <p className="text-[11px] text-blue-800 font-medium">
-                        Guru BK kelas Anda dapat memantau rekapan ini agar bisa memberikan pendampingan yang tepat setiap saat.
-                      </p>
-                    </div>
-                  )}
+                  {/* Friendly advice note */}
+                  <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-3 flex items-center gap-2.5 text-xs text-blue-900">
+                    <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                    <p className="text-[11px] text-blue-800 font-medium">
+                      Guru BK kelas Anda dapat memantau rekapan ini agar bisa memberikan pendampingan yang tepat setiap saat.
+                    </p>
+                  </div>
                 </div>
               );
             })()}
@@ -499,26 +483,6 @@ export const StudentMoodCheckCard: React.FC = () => {
                 placeholder="Tuliskan apa saja yang sedang membebani atau membuatmu senang hari ini... (Hanya dapat dibaca oleh Guru BK kelas Anda)"
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
               />
-            </div>
-
-            {/* Step 5: Counseling Request Checkbox */}
-            <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={needsCounseling}
-                  onChange={(e) => setNeedsCounseling(e.target.checked)}
-                  className="w-5 h-5 mt-0.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 rounded-md cursor-pointer"
-                />
-                <div className="text-xs">
-                  <span className="font-extrabold text-amber-950 block">
-                    Saya ingin diajak ngobrol / butuh sesi konseling dengan Guru BK kelas
-                  </span>
-                  <span className="text-amber-800 text-[11px] block mt-0.5 leading-relaxed">
-                    Centang jika perasaan ini cukup berat atau kamu butuh teman cerita. Sistem akan otomatis memberi pemberitahuan prioritas ke Guru BK yang mengampu kelasmu.
-                  </span>
-                </div>
-              </label>
             </div>
 
             {/* Actions */}

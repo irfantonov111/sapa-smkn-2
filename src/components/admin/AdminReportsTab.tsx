@@ -16,14 +16,12 @@ import {
   CheckSquare,
   Square,
   AlertCircle,
-  ArrowUpDown,
-  Download
+  ArrowUpDown
 } from 'lucide-react';
 import { EnrichedReport, ReportStatus, ReportUrgency } from '../../types/database';
 import { db } from '../../services/db';
 import { useAuth } from '../../context/AuthContext';
 import { decryptNip } from '../../utils/nipCrypto';
-import { exportReportsToExcel } from '../../utils/exportReportsExcel';
 import { StatusBadge, UrgencyBadge } from '../StatusBadges';
 import { DeleteReportModal } from '../DeleteReportModal';
 import { BulkDeleteReportModal } from '../BulkDeleteReportModal';
@@ -77,7 +75,6 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
 
   // Alert feedback
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   // Data fetching
   const reports = useMemo(() => {
@@ -104,31 +101,6 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
       };
     });
   }, [teachers, users]);
-
-  const handleExportExcel = () => {
-    if (!reports || reports.length === 0) {
-      setFeedback({ type: 'error', message: 'Belum ada data laporan yang dapat diekspor.' });
-      return;
-    }
-    setIsExportingExcel(true);
-    try {
-      // Export current filtered set if any filter is active, else all reports
-      const isFiltered = Boolean(searchQuery || selectedStatus !== 'all' || selectedCategory !== 'all' || selectedUrgency !== 'all' || selectedTarget !== 'all');
-      const targetReports = isFiltered ? filteredReports : reports;
-
-      if (targetReports.length === 0) {
-        setFeedback({ type: 'error', message: 'Tidak ada laporan yang sesuai dengan filter pencarian.' });
-        return;
-      }
-
-      exportReportsToExcel(targetReports, isFiltered ? 'Data_Laporan_Pengaduan_SAPA_Tersaring' : 'Data_Laporan_Pengaduan_SAPA_Lengkap');
-      setFeedback({ type: 'success', message: `Berhasil mengekspor ${targetReports.length} data laporan lengkap ke format Excel (.xlsx).` });
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: `Gagal mengekspor laporan: ${err?.message || 'Terjadi kesalahan'}` });
-    } finally {
-      setIsExportingExcel(false);
-    }
-  };
 
   // Filtered reports
   const filteredReports = useMemo(() => {
@@ -354,29 +326,16 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
         </div>
       )}
 
-      {/* Tab Header with Export Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+      {/* Tab Header */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
             <FileText className="w-5 h-5 text-purple-600" />
             <span>Manajemen Laporan Pengaduan Siswa</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Pantau status penanganan, delegasikan guru pendamping, dan ekspor riwayat pengaduan lengkap.
+            Pantau status penanganan, delegasikan guru pendamping, dan riwayat pengaduan lengkap.
           </p>
-        </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            disabled={isExportingExcel || reports.length === 0}
-            className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
-            title="Ekspor seluruh data laporan pengaduan siswa lengkap dari Kode, Tanggal, Judul & Kategori, Pelapor, Urgensi, Guru Pembimbing, hingga Status ke Excel (.xlsx)"
-          >
-            <Download className={`w-4 h-4 ${isExportingExcel ? 'animate-spin' : ''}`} />
-            <span>{isExportingExcel ? 'Mengekspor Laporan...' : 'Export Laporan (.xlsx)'}</span>
-          </button>
         </div>
       </div>
 

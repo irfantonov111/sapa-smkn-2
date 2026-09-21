@@ -49,7 +49,13 @@ import {
   createAnnouncement,
   updateAnnouncement,
   deleteAnnouncement,
-  getReportMessages
+  getReportMessages,
+  getCounselingAppointments,
+  createCounselingAppointment,
+  acceptCounselingAppointment,
+  rescheduleCounselingAppointment,
+  completeCounselingAppointment,
+  cancelCounselingAppointment
 } from './db';
 
 export const apiRouter = Router();
@@ -684,6 +690,20 @@ apiRouter.delete('/reports/:id', async (req: Request, res: Response) => {
   }
 });
 
+// Get Report by ID with full details & attachments
+apiRouter.get('/reports/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const data = await getReportById(id);
+    if (!data || !data.report) {
+      return res.status(404).json({ error: 'Laporan tidak ditemukan' });
+    }
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get messages for report
 apiRouter.get('/reports/:id/messages', async (req: Request, res: Response) => {
   try {
@@ -755,3 +775,87 @@ apiRouter.post('/reset', async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// --- COUNSELING APPOINTMENTS ROUTES ---
+apiRouter.get('/counseling/appointments', async (req: Request, res: Response) => {
+  try {
+    const { studentId, teacherId, userId } = req.query;
+    const list = await getCounselingAppointments({
+      studentId: studentId as string,
+      teacherId: teacherId as string,
+      userId: userId as string
+    });
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/counseling/appointments', async (req: Request, res: Response) => {
+  try {
+    const created = await createCounselingAppointment(req.body);
+    res.status(201).json(created);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.patch('/counseling/appointments/:id/accept', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    const updated = await acceptCounselingAppointment(id, notes);
+    if (!updated) {
+      return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
+    }
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.patch('/counseling/appointments/:id/reschedule', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { newDate, newTime, reason } = req.body;
+    if (!newDate || !newTime || !reason) {
+      return res.status(400).json({ error: 'Tanggal baru, jam baru, dan alasan perubahan jadwal wajib diisi' });
+    }
+    const updated = await rescheduleCounselingAppointment(id, newDate, newTime, reason);
+    if (!updated) {
+      return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
+    }
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.patch('/counseling/appointments/:id/complete', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    const updated = await completeCounselingAppointment(id, notes);
+    if (!updated) {
+      return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
+    }
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.patch('/counseling/appointments/:id/cancel', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const updated = await cancelCounselingAppointment(id, reason);
+    if (!updated) {
+      return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
+    }
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+

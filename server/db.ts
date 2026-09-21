@@ -14,7 +14,8 @@ import {
   ReportUrgency,
   ReportPrivacy,
   AssignedTo,
-  BkTeacherProfile
+  BkTeacherProfile,
+  CounselingAppointment
 } from '../src/types/database';
 
 import {
@@ -129,6 +130,7 @@ interface MemoryStore {
   notifications: Notification[];
   announcements: any[];
   mood_checks: any[];
+  counseling_appointments: CounselingAppointment[];
 }
 
 const memoryStore: MemoryStore = {
@@ -142,7 +144,8 @@ const memoryStore: MemoryStore = {
   status_history: JSON.parse(JSON.stringify(INITIAL_STATUS_HISTORY)),
   notifications: JSON.parse(JSON.stringify(INITIAL_NOTIFICATIONS)),
   announcements: JSON.parse(JSON.stringify(INITIAL_ANNOUNCEMENTS)),
-  mood_checks: JSON.parse(JSON.stringify(INITIAL_MOOD_CHECKS))
+  mood_checks: JSON.parse(JSON.stringify(INITIAL_MOOD_CHECKS)),
+  counseling_appointments: []
 };
 
 export async function initDatabase(): Promise<{ isPostgres: boolean; error?: string }> {
@@ -341,6 +344,28 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS counseling_appointments (
+        id VARCHAR(50) PRIMARY KEY,
+        student_id VARCHAR(50) NOT NULL,
+        student_user_id VARCHAR(50) NOT NULL,
+        student_name VARCHAR(150) NOT NULL,
+        student_class_name VARCHAR(100),
+        teacher_id VARCHAR(50) NOT NULL,
+        teacher_user_id VARCHAR(50) NOT NULL,
+        teacher_name VARCHAR(150) NOT NULL,
+        requested_date VARCHAR(30) NOT NULL,
+        requested_time VARCHAR(20) NOT NULL,
+        confirmed_date VARCHAR(30),
+        confirmed_time VARCHAR(20),
+        topic TEXT NOT NULL,
+        counseling_type VARCHAR(30) DEFAULT 'tatap_muka',
+        status VARCHAR(30) DEFAULT 'menunggu',
+        reschedule_reason TEXT,
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS system_settings (
         id VARCHAR(50) PRIMARY KEY,
         school_name VARCHAR(200) NOT NULL,
@@ -355,6 +380,7 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
       -- Smoothly add any new columns to existing tables
       ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
       ALTER TABLE classes ADD COLUMN IF NOT EXISTS bk_teacher_id VARCHAR(50);
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS specialization VARCHAR(255);
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS room VARCHAR(100);
@@ -362,6 +388,7 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS available_hours VARCHAR(100);
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS assigned_class_ids JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE teachers ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
       ALTER TABLE teachers ALTER COLUMN nip TYPE VARCHAR(255);
       ALTER TABLE reports ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
     `);
@@ -995,7 +1022,7 @@ export async function getMoodChecks(): Promise<any[]> {
 }
 
 export async function getFullDatabaseState() {
-  const [users, students, teachers, classes, categories, reports, announcements, moodChecks, messages] = await Promise.all([
+  const [users, students, teachers, classes, categories, reports, announcements, moodChecks, messages, counselingAppointments] = await Promise.all([
     getUsers(),
     getStudents(),
     getTeachers(),
@@ -1004,7 +1031,8 @@ export async function getFullDatabaseState() {
     getReports(),
     getAnnouncements(),
     getMoodChecks(),
-    getAllMessages()
+    getAllMessages(),
+    getCounselingAppointments()
   ]);
   return {
     users,
@@ -1016,6 +1044,7 @@ export async function getFullDatabaseState() {
     announcements,
     messages,
     mood_checks: moodChecks,
+    counseling_appointments: counselingAppointments,
     isPostgres: isPostgresConnected
   };
 }
@@ -2176,4 +2205,235 @@ export async function deleteCategoryPermanently(categoryId: string): Promise<boo
   memoryStore.categories = memoryStore.categories.filter(c => c.id !== categoryId);
   return true;
 }
+
+// --- COUNSELING APPOINTMENTS ---
+export async function getCounselingAppointments(filters?: { studentId?: string; teacherId?: string; userId?: string }): Promise<CounselingAppointment[]> {
+  if (isPostgresConnected && pool) {
+    try {
+      let query = 'SELECT * FROM counseling_appointments WHERE 1=1';
+      const params: any[] = [];
+      let idx = 1;
+
+      if (filters?.studentId) {
+        query += ` AND student_id = $${idx++}`;
+        params.push(filters.studentId);
+      }
+      if (filters?.teacherId) {
+        query += ` AND teacher_id = $${idx++}`;
+        params.push(filters.teacherId);
+      }
+      if (filters?.userId) {
+        query += ` AND (student_user_id = $${idx} OR teacher_user_id = $${idx})`;
+        params.push(filters.userId);
+        idx++;
+      }
+
+      query += ' ORDER BY requested_date ASC, requested_time ASC';
+      const res = await pool.query(query, params);
+      return res.rows;
+    } catch (e) {
+      console.warn('Postgres getCounselingAppointments failed, falling back to memoryStore:', e);
+    }
+  }
+
+  let list = memoryStore.counseling_appointments || [];
+  if (filters?.studentId) {
+    list = list.filter(a => a.student_id === filters.studentId);
+  }
+  if (filters?.teacherId) {
+    list = list.filter(a => a.teacher_id === filters.teacherId);
+  }
+  if (filters?.userId) {
+    list = list.filter(a => a.student_user_id === filters.userId || a.teacher_user_id === filters.userId);
+  }
+  return list.sort((a, b) => (a.requested_date + a.requested_time).localeCompare(b.requested_date + b.requested_time));
+}
+
+export async function createCounselingAppointment(data: Partial<CounselingAppointment>): Promise<CounselingAppointment> {
+  const newAppointment: CounselingAppointment = {
+    id: data.id || `apt-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    student_id: data.student_id || '',
+    student_user_id: data.student_user_id || '',
+    student_name: data.student_name || '',
+    student_class_name: data.student_class_name || '',
+    teacher_id: data.teacher_id || '',
+    teacher_user_id: data.teacher_user_id || '',
+    teacher_name: data.teacher_name || '',
+    requested_date: data.requested_date || '',
+    requested_time: data.requested_time || '',
+    confirmed_date: data.confirmed_date,
+    confirmed_time: data.confirmed_time,
+    topic: data.topic || '',
+    counseling_type: data.counseling_type || 'tatap_muka',
+    status: data.status || 'menunggu',
+    reschedule_reason: data.reschedule_reason,
+    notes: data.notes,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query(
+        `INSERT INTO counseling_appointments (
+          id, student_id, student_user_id, student_name, student_class_name,
+          teacher_id, teacher_user_id, teacher_name, requested_date, requested_time,
+          confirmed_date, confirmed_time, topic, counseling_type, status,
+          reschedule_reason, notes, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+        [
+          newAppointment.id,
+          newAppointment.student_id,
+          newAppointment.student_user_id,
+          newAppointment.student_name,
+          newAppointment.student_class_name,
+          newAppointment.teacher_id,
+          newAppointment.teacher_user_id,
+          newAppointment.teacher_name,
+          newAppointment.requested_date,
+          newAppointment.requested_time,
+          newAppointment.confirmed_date || null,
+          newAppointment.confirmed_time || null,
+          newAppointment.topic,
+          newAppointment.counseling_type,
+          newAppointment.status,
+          newAppointment.reschedule_reason || null,
+          newAppointment.notes || null,
+          newAppointment.created_at,
+          newAppointment.updated_at
+        ]
+      );
+    } catch (e) {
+      console.warn('Postgres createCounselingAppointment failed:', e);
+    }
+  }
+
+  if (!memoryStore.counseling_appointments) {
+    memoryStore.counseling_appointments = [];
+  }
+  const idx = memoryStore.counseling_appointments.findIndex(a => a.id === newAppointment.id);
+  if (idx >= 0) {
+    memoryStore.counseling_appointments[idx] = newAppointment;
+  } else {
+    memoryStore.counseling_appointments.push(newAppointment);
+  }
+
+  return newAppointment;
+}
+
+export async function acceptCounselingAppointment(id: string, notes?: string): Promise<CounselingAppointment | null> {
+  const now = new Date().toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        `UPDATE counseling_appointments
+         SET status = 'disetujui', notes = COALESCE($1, notes), updated_at = $2
+         WHERE id = $3
+         RETURNING *`,
+        [notes || null, now, id]
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn('Postgres acceptCounselingAppointment failed:', e);
+    }
+  }
+
+  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (apt) {
+    apt.status = 'disetujui';
+    if (notes) apt.notes = notes;
+    apt.updated_at = now;
+    return apt;
+  }
+  return null;
+}
+
+export async function rescheduleCounselingAppointment(
+  id: string,
+  newDate: string,
+  newTime: string,
+  reason: string
+): Promise<CounselingAppointment | null> {
+  const now = new Date().toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        `UPDATE counseling_appointments
+         SET status = 'dijadwalkan_ulang', confirmed_date = $1, confirmed_time = $2, reschedule_reason = $3, updated_at = $4
+         WHERE id = $5
+         RETURNING *`,
+        [newDate, newTime, reason, now, id]
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn('Postgres rescheduleCounselingAppointment failed:', e);
+    }
+  }
+
+  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (apt) {
+    apt.status = 'dijadwalkan_ulang';
+    apt.confirmed_date = newDate;
+    apt.confirmed_time = newTime;
+    apt.reschedule_reason = reason;
+    apt.updated_at = now;
+    return apt;
+  }
+  return null;
+}
+
+export async function completeCounselingAppointment(id: string, notes?: string): Promise<CounselingAppointment | null> {
+  const now = new Date().toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        `UPDATE counseling_appointments
+         SET status = 'selesai', notes = COALESCE($1, notes), updated_at = $2
+         WHERE id = $3
+         RETURNING *`,
+        [notes || null, now, id]
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn('Postgres completeCounselingAppointment failed:', e);
+    }
+  }
+
+  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (apt) {
+    apt.status = 'selesai';
+    if (notes) apt.notes = notes;
+    apt.updated_at = now;
+    return apt;
+  }
+  return null;
+}
+
+export async function cancelCounselingAppointment(id: string, reason?: string): Promise<CounselingAppointment | null> {
+  const now = new Date().toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        `UPDATE counseling_appointments
+         SET status = 'dibatalkan', reschedule_reason = COALESCE($1, reschedule_reason), updated_at = $2
+         WHERE id = $3
+         RETURNING *`,
+        [reason || null, now, id]
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn('Postgres cancelCounselingAppointment failed:', e);
+    }
+  }
+
+  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (apt) {
+    apt.status = 'dibatalkan';
+    if (reason) apt.reschedule_reason = reason;
+    apt.updated_at = now;
+    return apt;
+  }
+  return null;
+}
+
 
