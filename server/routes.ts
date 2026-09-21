@@ -719,13 +719,14 @@ apiRouter.get('/reports/:id/messages', async (req: Request, res: Response) => {
 apiRouter.post('/reports/:id/messages', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { senderId, message } = req.body;
+    const { senderId, message, attachment } = req.body;
 
-    if (!senderId || !message || !message.trim()) {
-      return res.status(400).json({ error: 'Pesan tidak boleh kosong' });
+    const trimmedMsg = (message || '').trim();
+    if (!senderId || (!trimmedMsg && !attachment?.url)) {
+      return res.status(400).json({ error: 'Pesan atau lampiran tidak boleh kosong' });
     }
 
-    const newMsg = await addMessage(id, senderId, message.trim());
+    const newMsg = await addMessage(id, senderId, trimmedMsg, attachment);
     res.status(201).json(newMsg);
   } catch (err: any) {
     const isForbidden = err.message && err.message.includes('Siswa tidak dapat mengirim pesan');

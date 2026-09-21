@@ -15,7 +15,8 @@ import {
   ChevronRight,
   Shield,
   Sparkles,
-  HeartHandshake
+  HeartHandshake,
+  CalendarDays
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -264,6 +265,24 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                   </span>
                 )}
               </button>
+
+              {teacherProfile?.teacher_type === 'guru_bk' && (
+                <button
+                  type="button"
+                  onClick={() => handleItemClick('counseling')}
+                  className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition ${
+                    activeTab === 'counseling'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <CalendarDays className="w-4 h-4 text-indigo-500" />
+                    <span>Jadwal Konseling</span>
+                  </div>
+                  <ChevronRight className={`w-3.5 h-3.5 ${activeTab === 'counseling' ? 'text-white' : 'text-slate-400'}`} />
+                </button>
+              )}
 
               <button
                 type="button"

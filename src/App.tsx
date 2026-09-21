@@ -104,6 +104,9 @@ const MainApp: React.FC = () => {
       case 'inbox':
         return <ReportsListPage key="inbox" onNavigate={handleNavigate} />;
 
+      case 'counseling':
+        return <TeacherDashboard onNavigate={handleNavigate} initialTab="counseling" />;
+
       case 'follow-up':
         return <ReportsListPage key="follow-up" onNavigate={handleNavigate} statusFilterPreset="ditindaklanjuti" />;
 

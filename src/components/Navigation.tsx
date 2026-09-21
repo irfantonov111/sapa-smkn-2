@@ -13,7 +13,8 @@ import {
   Layers,
   Megaphone,
   Menu,
-  HeartHandshake
+  HeartHandshake,
+  CalendarDays
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -44,10 +45,17 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
       { id: 'notifications', label: 'Notifikasi', icon: Bell, badge: unreadNotifs }
     ];
   } else if (currentUser.role === 'guru') {
+    const teacherRecord = db.getTeacherByUserId(currentUser.id);
+    const isBK = teacherRecord?.teacher_type === 'guru_bk';
+    const pendingCounseling = isBK
+      ? db.getCounselingAppointments({ teacher_id: teacherRecord?.id, status: 'menunggu' }).length
+      : 0;
+
     // Menu profil dihilangkan untuk guru karena sudah dapat diakses melalui menu profil pojok kanan atas
     navItems = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'inbox', label: 'Laporan Masuk', icon: Inbox },
+      ...(isBK ? [{ id: 'counseling', label: 'Jadwal Konseling', icon: CalendarDays, badge: pendingCounseling }] : []),
       { id: 'mood-check', label: 'Rekap Mood Siswa', icon: HeartHandshake },
       { id: 'announcements', label: 'Pengumuman', icon: Megaphone },
       { id: 'notifications', label: 'Notifikasi', icon: Bell, badge: unreadNotifs }

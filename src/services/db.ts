@@ -1556,9 +1556,24 @@ class DatabaseService {
     return messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }
 
-  public sendMessage(reportId: string, senderUser: User, text: string): Message {
+  public sendMessage(
+    reportId: string,
+    senderUser: User,
+    text: string,
+    attachment?: {
+      url: string;
+      name: string;
+      type: 'image' | 'file';
+      size?: string | number;
+    }
+  ): Message {
     const report = this.state.reports.find(r => r.id === reportId);
     if (!report) throw new Error('Laporan tidak ditemukan.');
+
+    const trimmedText = (text || '').trim();
+    if (!trimmedText && !attachment) {
+      throw new Error('Pesan atau lampiran tidak boleh kosong.');
+    }
 
     // If sender is teacher, ensure only the assigned BK teacher can reply
     if (senderUser.role === 'guru') {
@@ -1599,9 +1614,13 @@ class DatabaseService {
       id: `msg-${Date.now()}`,
       report_id: reportId,
       sender_id: senderUser.id,
-      message: text.trim(),
+      message: trimmedText || (attachment ? (attachment.type === 'image' ? '📷 [Lampiran Foto]' : `📎 [Lampiran Berkas: ${attachment.name}]`) : ''),
       created_at: now,
-      is_read: false
+      is_read: false,
+      attachment_url: attachment?.url,
+      attachment_name: attachment?.name,
+      attachment_type: attachment?.type,
+      attachment_size: attachment?.size
     };
 
     this.state.messages.push(newMessage);
@@ -1622,6 +1641,7 @@ class DatabaseService {
 
     // Notifications
     const student = this.state.students.find(s => s.id === report.student_id);
+    const notifSnippet = trimmedText || (attachment ? `Mengirimkan lampiran: ${attachment.name}` : '');
     if (senderUser.role === 'guru') {
       // Notify student
       if (student) {
@@ -1630,7 +1650,7 @@ class DatabaseService {
           user_id: student.user_id,
           report_id: report.id,
           title: 'Respons Baru dari Guru',
-          message: `${senderUser.name} membalas laporan #${report.report_code}: "${text.slice(0, 75)}${text.length > 75 ? '...' : ''}"`,
+          message: `${senderUser.name} membalas laporan #${report.report_code}: "${notifSnippet.slice(0, 75)}${notifSnippet.length > 75 ? '...' : ''}"`,
           is_read: false,
           created_at: now
         });
@@ -1649,7 +1669,7 @@ class DatabaseService {
           user_id: recipientTeacherId,
           report_id: report.id,
           title: 'Balasan Pesan dari Siswa',
-          message: `Siswa membalas laporan #${report.report_code}: "${text.slice(0, 75)}${text.length > 75 ? '...' : ''}"`,
+          message: `Siswa membalas laporan #${report.report_code}: "${notifSnippet.slice(0, 75)}${notifSnippet.length > 75 ? '...' : ''}"`,
           is_read: false,
           created_at: now
         });
@@ -1660,7 +1680,8 @@ class DatabaseService {
     this.notifyListeners();
     this.syncToServer(`/api/reports/${reportId}/messages`, 'POST', {
       senderId: senderUser.id,
-      message: text.trim()
+      message: newMessage.message,
+      attachment
     });
     return newMessage;
   }

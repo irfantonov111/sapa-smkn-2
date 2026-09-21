@@ -274,8 +274,17 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
         sender_id VARCHAR(50) NOT NULL,
         message TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        is_read BOOLEAN DEFAULT FALSE
+        is_read BOOLEAN DEFAULT FALSE,
+        attachment_url TEXT,
+        attachment_name TEXT,
+        attachment_type VARCHAR(20),
+        attachment_size VARCHAR(50)
       );
+
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_url TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(20);
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_size VARCHAR(50);
 
       CREATE TABLE IF NOT EXISTS report_status_history (
         id VARCHAR(50) PRIMARY KEY,
@@ -1472,7 +1481,13 @@ export async function deleteReport(reportId: string): Promise<boolean> {
 export async function addMessage(
   reportId: string,
   senderId: string,
-  messageText: string
+  messageText: string,
+  attachment?: {
+    url: string;
+    name: string;
+    type: 'image' | 'file';
+    size?: string | number;
+  }
 ): Promise<Message> {
   // Check if sender is student and teacher already changed report status
   let senderRole: string | undefined;
@@ -1499,20 +1514,38 @@ export async function addMessage(
   const now = new Date().toISOString();
   const messageId = `msg-${Date.now()}`;
 
+  const trimmedText = (messageText || '').trim();
+  const finalText = trimmedText || (attachment ? (attachment.type === 'image' ? '📷 [Lampiran Foto]' : `📎 [Lampiran Berkas: ${attachment.name}]`) : '');
+
   const newMsg: Message = {
     id: messageId,
     report_id: reportId,
     sender_id: senderId,
-    message: messageText,
+    message: finalText,
     created_at: now,
-    is_read: false
+    is_read: false,
+    attachment_url: attachment?.url,
+    attachment_name: attachment?.name,
+    attachment_type: attachment?.type,
+    attachment_size: attachment?.size
   };
 
   if (isPostgresConnected && pool) {
     await pool.query(
-      `INSERT INTO messages (id, report_id, sender_id, message, created_at, is_read)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [newMsg.id, newMsg.report_id, newMsg.sender_id, newMsg.message, newMsg.created_at, newMsg.is_read]
+      `INSERT INTO messages (id, report_id, sender_id, message, created_at, is_read, attachment_url, attachment_name, attachment_type, attachment_size)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        newMsg.id,
+        newMsg.report_id,
+        newMsg.sender_id,
+        newMsg.message,
+        newMsg.created_at,
+        newMsg.is_read,
+        newMsg.attachment_url || null,
+        newMsg.attachment_name || null,
+        newMsg.attachment_type || null,
+        newMsg.attachment_size ? String(newMsg.attachment_size) : null
+      ]
     );
     await pool.query('UPDATE reports SET updated_at = $1 WHERE id = $2', [now, reportId]);
   } else {

@@ -178,6 +178,10 @@ export interface Message {
   message: string;
   created_at: string;
   is_read: boolean;
+  attachment_url?: string;
+  attachment_name?: string;
+  attachment_type?: 'image' | 'file';
+  attachment_size?: string | number;
 }
 
 export interface ReportStatusHistory {
