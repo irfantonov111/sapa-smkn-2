@@ -20,6 +20,7 @@ model User {
   email            String    @unique
   password         String?
   role             String    // 'siswa' | 'guru' | 'admin'
+  gender           String?   // 'L' | 'P'
   avatar           String?
   phone            String?
   password_changed Boolean   @default(false)
@@ -66,6 +67,7 @@ model Teacher {
   user_id            String    @unique
   nip                String    @unique
   teacher_type       String    // 'guru_bk' | 'wali_kelas'
+  gender             String?   // 'L' | 'P'
   specialization     String?
   room               String?
   bio                String?
@@ -120,15 +122,19 @@ model Report {
 }
 
 model Message {
-  id         String   @id
-  report_id  String
-  sender_id  String
-  message    String
-  created_at DateTime @default(now())
-  is_read    Boolean  @default(false)
+  id              String   @id
+  report_id       String
+  sender_id       String
+  message         String
+  attachment_url  String?
+  attachment_name String?
+  attachment_type String?
+  attachment_size String?
+  created_at      DateTime @default(now())
+  is_read         Boolean  @default(false)
 
-  report     Report   @relation(fields: [report_id], references: [id], onDelete: Cascade)
-  sender     User     @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+  report          Report   @relation(fields: [report_id], references: [id], onDelete: Cascade)
+  sender          User     @relation(fields: [sender_id], references: [id], onDelete: Cascade)
 
   @@map("messages")
 }
@@ -212,3 +218,28 @@ model MoodCheck {
 
   @@map("mood_checks")
 }
+
+model CounselingAppointment {
+  id                 String    @id
+  student_id         String
+  student_user_id    String
+  student_name       String
+  student_class_name String?
+  teacher_id         String
+  teacher_user_id    String
+  teacher_name       String
+  requested_date     String
+  requested_time     String
+  confirmed_date     String?
+  confirmed_time     String?
+  topic              String
+  counseling_type    String    @default("tatap_muka")
+  status             String    @default("menunggu")
+  reschedule_reason  String?
+  notes              String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @default(now()) @updatedAt
+
+  @@map("counseling_appointments")
+}
+

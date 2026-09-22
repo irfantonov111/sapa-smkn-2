@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     email VARCHAR(150) UNIQUE NOT NULL,
     password TEXT,
     role VARCHAR(20) NOT NULL CHECK (role IN ('siswa', 'guru', 'admin')),
+    gender VARCHAR(10) CHECK (gender IN ('L', 'P')),
     avatar TEXT,
     phone VARCHAR(30),
     password_changed BOOLEAN DEFAULT FALSE,
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS public.teachers (
     user_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     nip VARCHAR(255) UNIQUE NOT NULL,
     teacher_type VARCHAR(30) NOT NULL CHECK (teacher_type IN ('guru_bk', 'wali_kelas')),
+    gender VARCHAR(10) CHECK (gender IN ('L', 'P')),
     specialization VARCHAR(255),
     room VARCHAR(100),
     bio TEXT,
@@ -88,6 +90,10 @@ CREATE TABLE IF NOT EXISTS public.messages (
     report_id VARCHAR(50) NOT NULL REFERENCES public.reports(id) ON DELETE CASCADE,
     sender_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     message TEXT NOT NULL,
+    attachment_url TEXT,
+    attachment_name TEXT,
+    attachment_type VARCHAR(20),
+    attachment_size VARCHAR(50),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     is_read BOOLEAN DEFAULT FALSE
 );
@@ -175,6 +181,29 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 13. Counseling Appointments (Jadwal Pengajuan Janji Temu Konseling Siswa & Guru BK)
+CREATE TABLE IF NOT EXISTS public.counseling_appointments (
+    id VARCHAR(50) PRIMARY KEY,
+    student_id VARCHAR(50) NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+    student_user_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    student_name VARCHAR(150) NOT NULL,
+    student_class_name VARCHAR(100),
+    teacher_id VARCHAR(50) NOT NULL REFERENCES public.teachers(id) ON DELETE CASCADE,
+    teacher_user_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    teacher_name VARCHAR(150) NOT NULL,
+    requested_date VARCHAR(30) NOT NULL,
+    requested_time VARCHAR(20) NOT NULL,
+    confirmed_date VARCHAR(30),
+    confirmed_time VARCHAR(20),
+    topic TEXT NOT NULL,
+    counseling_type VARCHAR(30) DEFAULT 'tatap_muka' CHECK (counseling_type IN ('tatap_muka', 'online_chat')),
+    status VARCHAR(30) DEFAULT 'menunggu' CHECK (status IN ('menunggu', 'disetujui', 'dijadwalkan_ulang', 'selesai', 'dibatalkan')),
+    reschedule_reason TEXT,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indeks untuk Performa Query
 CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
@@ -193,3 +222,21 @@ CREATE INDEX IF NOT EXISTS idx_status_history_report ON public.report_status_his
 CREATE INDEX IF NOT EXISTS idx_mood_student ON public.student_mood_checks(student_id);
 CREATE INDEX IF NOT EXISTS idx_mood_date ON public.student_mood_checks(date);
 CREATE INDEX IF NOT EXISTS idx_announcements_target ON public.announcements(target_grade);
+CREATE INDEX IF NOT EXISTS idx_counseling_student ON public.counseling_appointments(student_id);
+CREATE INDEX IF NOT EXISTS idx_counseling_teacher ON public.counseling_appointments(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_counseling_status ON public.counseling_appointments(status);
+CREATE INDEX IF NOT EXISTS idx_counseling_date ON public.counseling_appointments(requested_date);
+
+-- ==============================================================================
+-- Skrip Migrasi Idempotent (Aman dieksekusi berulang kali pada database lama)
+-- ==============================================================================
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
+ALTER TABLE public.teachers ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
+ALTER TABLE public.teachers ALTER COLUMN nip TYPE VARCHAR(255);
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS attachment_url TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(20);
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS attachment_size VARCHAR(50);
+ALTER TABLE public.reports ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.classes ADD COLUMN IF NOT EXISTS bk_teacher_id VARCHAR(50);
+
