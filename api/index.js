@@ -22296,7 +22296,8 @@ var memoryStore = {
   status_history: JSON.parse(JSON.stringify(INITIAL_STATUS_HISTORY)),
   notifications: JSON.parse(JSON.stringify(INITIAL_NOTIFICATIONS)),
   announcements: JSON.parse(JSON.stringify(INITIAL_ANNOUNCEMENTS)),
-  mood_checks: JSON.parse(JSON.stringify(INITIAL_MOOD_CHECKS))
+  mood_checks: JSON.parse(JSON.stringify(INITIAL_MOOD_CHECKS)),
+  counseling_appointments: []
 };
 async function initDatabase() {
   const connStr = getConnectionString();
@@ -22418,8 +22419,17 @@ async function initDatabase() {
         sender_id VARCHAR(50) NOT NULL,
         message TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        is_read BOOLEAN DEFAULT FALSE
+        is_read BOOLEAN DEFAULT FALSE,
+        attachment_url TEXT,
+        attachment_name TEXT,
+        attachment_type VARCHAR(20),
+        attachment_size VARCHAR(50)
       );
+
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_url TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(20);
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_size VARCHAR(50);
 
       CREATE TABLE IF NOT EXISTS report_status_history (
         id VARCHAR(50) PRIMARY KEY,
@@ -22488,6 +22498,28 @@ async function initDatabase() {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS counseling_appointments (
+        id VARCHAR(50) PRIMARY KEY,
+        student_id VARCHAR(50) NOT NULL,
+        student_user_id VARCHAR(50) NOT NULL,
+        student_name VARCHAR(150) NOT NULL,
+        student_class_name VARCHAR(100),
+        teacher_id VARCHAR(50) NOT NULL,
+        teacher_user_id VARCHAR(50) NOT NULL,
+        teacher_name VARCHAR(150) NOT NULL,
+        requested_date VARCHAR(30) NOT NULL,
+        requested_time VARCHAR(20) NOT NULL,
+        confirmed_date VARCHAR(30),
+        confirmed_time VARCHAR(20),
+        topic TEXT NOT NULL,
+        counseling_type VARCHAR(30) DEFAULT 'tatap_muka',
+        status VARCHAR(30) DEFAULT 'menunggu',
+        reschedule_reason TEXT,
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS system_settings (
         id VARCHAR(50) PRIMARY KEY,
         school_name VARCHAR(200) NOT NULL,
@@ -22502,6 +22534,7 @@ async function initDatabase() {
       -- Smoothly add any new columns to existing tables
       ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
       ALTER TABLE classes ADD COLUMN IF NOT EXISTS bk_teacher_id VARCHAR(50);
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS specialization VARCHAR(255);
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS room VARCHAR(100);
@@ -22509,6 +22542,7 @@ async function initDatabase() {
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS available_hours VARCHAR(100);
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS assigned_class_ids JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE teachers ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
       ALTER TABLE teachers ALTER COLUMN nip TYPE VARCHAR(255);
       ALTER TABLE reports ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
     `);
@@ -22892,13 +22926,177 @@ async function getAnnouncements() {
       const res = await pool.query("SELECT * FROM announcements ORDER BY created_at DESC");
       return res.rows.map((r) => ({
         ...r,
-        attachments: typeof r.attachments === "string" ? JSON.parse(r.attachments) : r.attachments || []
+        attachments: typeof r.attachments === "string" ? JSON.parse(r.attachments) : r.attachments || [],
+        read_by: typeof r.read_by === "string" ? JSON.parse(r.read_by) : r.read_by || []
       }));
     } catch {
       return [];
     }
   }
   return memoryStore.announcements;
+}
+async function createAnnouncement(data) {
+  const id = data.id || `anc-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const newAnc = {
+    id,
+    title: data.title,
+    content: data.content,
+    author_id: data.author_id || data.author_user_id || "system",
+    author_user_id: data.author_user_id || data.author_id || "system",
+    author_name: data.author_name || "Bimbingan Konseling",
+    author_role: data.author_role || "Guru BK",
+    author_avatar: data.author_avatar || null,
+    target_grade: data.target_grade || "all",
+    target_class_id: data.target_class_id || null,
+    target_class_name: data.target_class_name || null,
+    category: data.category || "Bimbingan Konseling",
+    attachments: data.attachments || [],
+    link_url: data.link_url || null,
+    link_title: data.link_title || null,
+    image_url: data.image_url || null,
+    video_url: data.video_url || null,
+    read_by: data.read_by || [],
+    created_at: data.created_at || now,
+    updated_at: data.updated_at || now
+  };
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query(
+        `INSERT INTO announcements (
+          id, title, content, author_id, author_user_id, author_name, author_role, author_avatar,
+          target_grade, target_class_id, target_class_name, category, attachments, link_url, link_title,
+          image_url, video_url, read_by, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+        ) ON CONFLICT (id) DO UPDATE SET
+          title = EXCLUDED.title,
+          content = EXCLUDED.content,
+          target_grade = EXCLUDED.target_grade,
+          target_class_id = EXCLUDED.target_class_id,
+          target_class_name = EXCLUDED.target_class_name,
+          category = EXCLUDED.category,
+          attachments = EXCLUDED.attachments,
+          link_url = EXCLUDED.link_url,
+          link_title = EXCLUDED.link_title,
+          image_url = EXCLUDED.image_url,
+          video_url = EXCLUDED.video_url,
+          updated_at = EXCLUDED.updated_at`,
+        [
+          newAnc.id,
+          newAnc.title,
+          newAnc.content,
+          newAnc.author_id,
+          newAnc.author_user_id,
+          newAnc.author_name,
+          newAnc.author_role,
+          newAnc.author_avatar,
+          newAnc.target_grade,
+          newAnc.target_class_id,
+          newAnc.target_class_name,
+          newAnc.category,
+          JSON.stringify(newAnc.attachments),
+          newAnc.link_url,
+          newAnc.link_title,
+          newAnc.image_url,
+          newAnc.video_url,
+          JSON.stringify(newAnc.read_by),
+          newAnc.created_at,
+          newAnc.updated_at
+        ]
+      );
+    } catch (err) {
+      console.error("Failed to insert announcement into postgres:", err);
+    }
+  }
+  const idx = memoryStore.announcements.findIndex((a) => a.id === id);
+  if (idx !== -1) {
+    memoryStore.announcements[idx] = newAnc;
+  } else {
+    memoryStore.announcements.unshift(newAnc);
+  }
+  return newAnc;
+}
+async function deleteAnnouncement(id) {
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query("DELETE FROM announcements WHERE id = $1", [id]);
+    } catch (err) {
+      console.error("Failed to delete announcement from postgres:", err);
+    }
+  }
+  memoryStore.announcements = memoryStore.announcements.filter((a) => a.id !== id);
+  return true;
+}
+async function updateAnnouncement(id, updates) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      if (updates.title || updates.content) {
+        await pool.query(
+          `UPDATE announcements SET
+            title = COALESCE($1, title),
+            content = COALESCE($2, content),
+            target_grade = COALESCE($3, target_grade),
+            target_class_id = COALESCE($4, target_class_id),
+            category = COALESCE($5, category),
+            link_url = COALESCE($6, link_url),
+            link_title = COALESCE($7, link_title),
+            image_url = COALESCE($8, image_url),
+            video_url = COALESCE($9, video_url),
+            attachments = CASE WHEN $10::text IS NOT NULL THEN $10::jsonb ELSE attachments END,
+            read_by = CASE WHEN $11::text IS NOT NULL THEN $11::jsonb ELSE read_by END,
+            updated_at = $12
+          WHERE id = $13`,
+          [
+            updates.title || null,
+            updates.content || null,
+            updates.target_grade || null,
+            updates.target_class_id || null,
+            updates.category || null,
+            updates.link_url || null,
+            updates.link_title || null,
+            updates.image_url || null,
+            updates.video_url || null,
+            updates.attachments ? JSON.stringify(updates.attachments) : null,
+            updates.read_by ? JSON.stringify(updates.read_by) : null,
+            now,
+            id
+          ]
+        );
+      }
+    } catch (err) {
+      console.error("Failed to update announcement in postgres:", err);
+    }
+  }
+  const anc = memoryStore.announcements.find((a) => a.id === id);
+  if (anc) {
+    Object.assign(anc, updates, { updated_at: now });
+    return anc;
+  }
+  return null;
+}
+async function getAllMessages() {
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query("SELECT * FROM messages ORDER BY created_at ASC");
+      return res.rows;
+    } catch {
+      return [];
+    }
+  }
+  return memoryStore.messages;
+}
+async function getReportMessages(reportId) {
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query("SELECT * FROM messages WHERE report_id = $1 ORDER BY created_at ASC", [reportId]);
+      return res.rows;
+    } catch {
+      return [];
+    }
+  }
+  return memoryStore.messages.filter((m) => m.report_id === reportId).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 }
 async function getMoodChecks() {
   if (isPostgresConnected && pool) {
@@ -22912,7 +23110,7 @@ async function getMoodChecks() {
   return memoryStore.mood_checks;
 }
 async function getFullDatabaseState() {
-  const [users, students, teachers, classes, categories, reports, announcements, moodChecks] = await Promise.all([
+  const [users, students, teachers, classes, categories, reports, announcements, moodChecks, messages, counselingAppointments] = await Promise.all([
     getUsers(),
     getStudents(),
     getTeachers(),
@@ -22920,7 +23118,9 @@ async function getFullDatabaseState() {
     getCategories(),
     getReports(),
     getAnnouncements(),
-    getMoodChecks()
+    getMoodChecks(),
+    getAllMessages(),
+    getCounselingAppointments()
   ]);
   return {
     users,
@@ -22930,7 +23130,9 @@ async function getFullDatabaseState() {
     categories,
     reports,
     announcements,
+    messages,
     mood_checks: moodChecks,
+    counseling_appointments: counselingAppointments,
     isPostgres: isPostgresConnected
   };
 }
@@ -22989,8 +23191,16 @@ function enrichReport(report, categories, students, users, classes, messages, te
   }
   const assignedTeacher = teachers.find((t) => t.teacher_type === report.assigned_to);
   const assignedTeacherUser = assignedTeacher ? users.find((u) => u.id === assignedTeacher.user_id) : null;
+  const attachments = typeof report.attachments === "string" ? (() => {
+    try {
+      return JSON.parse(report.attachments);
+    } catch {
+      return [];
+    }
+  })() : report.attachments || [];
   return {
     ...report,
+    attachments,
     category,
     student: {
       nis: isAnonymous ? "RAHASIA" : student?.nis || "-",
@@ -23025,7 +23235,16 @@ async function getReports(filter) {
     const clRes = await pool.query("SELECT * FROM classes");
     const mRes = await pool.query("SELECT * FROM messages");
     const tRes = await pool.query("SELECT * FROM teachers");
-    reports = rRes.rows;
+    reports = rRes.rows.map((r) => ({
+      ...r,
+      attachments: typeof r.attachments === "string" ? (() => {
+        try {
+          return JSON.parse(r.attachments);
+        } catch {
+          return [];
+        }
+      })() : r.attachments || []
+    }));
     categories = cRes.rows;
     students = sRes.rows;
     users = uRes.rows;
@@ -23073,6 +23292,13 @@ async function getReportById(id) {
     const rRes = await pool.query("SELECT * FROM reports WHERE id = $1", [id]);
     rawReport = rRes.rows[0] || null;
     if (rawReport) {
+      rawReport.attachments = typeof rawReport.attachments === "string" ? (() => {
+        try {
+          return JSON.parse(rawReport.attachments);
+        } catch {
+          return [];
+        }
+      })() : rawReport.attachments || [];
       const cRes = await pool.query("SELECT * FROM categories");
       const sRes = await pool.query("SELECT * FROM students");
       const uRes = await pool.query("SELECT * FROM users");
@@ -23118,7 +23344,8 @@ async function createReport(data) {
   const count = isPostgresConnected && pool ? (await pool.query("SELECT COUNT(*) FROM reports")).rows[0].count : memoryStore.reports.length;
   const reportCode = `AC-${String(parseInt(count, 10) + 1).padStart(5, "0")}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const reportId = `rep-${Date.now()}`;
+  const reportId = data.id || `rep-${Date.now()}`;
+  const attachments = data.attachments || [];
   const newReport = {
     id: reportId,
     report_code: reportCode,
@@ -23131,6 +23358,7 @@ async function createReport(data) {
     urgency: data.urgency,
     privacy: data.privacy,
     status: "terkirim",
+    attachments,
     created_at: now,
     updated_at: now
   };
@@ -23144,8 +23372,8 @@ async function createReport(data) {
   };
   if (isPostgresConnected && pool) {
     await pool.query(
-      `INSERT INTO reports (id, report_code, student_id, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      `INSERT INTO reports (id, report_code, student_id, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, status, attachments, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         newReport.id,
         newReport.report_code,
@@ -23158,6 +23386,7 @@ async function createReport(data) {
         newReport.urgency,
         newReport.privacy,
         newReport.status,
+        JSON.stringify(attachments),
         newReport.created_at,
         newReport.updated_at
       ]
@@ -23265,7 +23494,7 @@ async function deleteReport(reportId) {
     return true;
   }
 }
-async function addMessage(reportId, senderId, messageText) {
+async function addMessage(reportId, senderId, messageText, attachment) {
   let senderRole;
   let reportStatus;
   if (isPostgresConnected && pool) {
@@ -23282,19 +23511,36 @@ async function addMessage(reportId, senderId, messageText) {
   }
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const messageId = `msg-${Date.now()}`;
+  const trimmedText = (messageText || "").trim();
+  const finalText = trimmedText || (attachment ? attachment.type === "image" ? "\u{1F4F7} [Lampiran Foto]" : `\u{1F4CE} [Lampiran Berkas: ${attachment.name}]` : "");
   const newMsg = {
     id: messageId,
     report_id: reportId,
     sender_id: senderId,
-    message: messageText,
+    message: finalText,
     created_at: now,
-    is_read: false
+    is_read: false,
+    attachment_url: attachment?.url,
+    attachment_name: attachment?.name,
+    attachment_type: attachment?.type,
+    attachment_size: attachment?.size
   };
   if (isPostgresConnected && pool) {
     await pool.query(
-      `INSERT INTO messages (id, report_id, sender_id, message, created_at, is_read)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [newMsg.id, newMsg.report_id, newMsg.sender_id, newMsg.message, newMsg.created_at, newMsg.is_read]
+      `INSERT INTO messages (id, report_id, sender_id, message, created_at, is_read, attachment_url, attachment_name, attachment_type, attachment_size)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        newMsg.id,
+        newMsg.report_id,
+        newMsg.sender_id,
+        newMsg.message,
+        newMsg.created_at,
+        newMsg.is_read,
+        newMsg.attachment_url || null,
+        newMsg.attachment_name || null,
+        newMsg.attachment_type || null,
+        newMsg.attachment_size ? String(newMsg.attachment_size) : null
+      ]
     );
     await pool.query("UPDATE reports SET updated_at = $1 WHERE id = $2", [now, reportId]);
   } else {
@@ -23904,6 +24150,214 @@ async function deleteCategoryPermanently(categoryId) {
   memoryStore.categories = memoryStore.categories.filter((c) => c.id !== categoryId);
   return true;
 }
+async function getCounselingAppointments(filters) {
+  if (isPostgresConnected && pool) {
+    try {
+      let query = "SELECT * FROM counseling_appointments WHERE 1=1";
+      const params = [];
+      let idx = 1;
+      if (filters?.studentId) {
+        query += ` AND student_id = $${idx++}`;
+        params.push(filters.studentId);
+      }
+      if (filters?.teacherId) {
+        query += ` AND teacher_id = $${idx++}`;
+        params.push(filters.teacherId);
+      }
+      if (filters?.userId) {
+        query += ` AND (student_user_id = $${idx} OR teacher_user_id = $${idx})`;
+        params.push(filters.userId);
+        idx++;
+      }
+      query += " ORDER BY requested_date ASC, requested_time ASC";
+      const res = await pool.query(query, params);
+      return res.rows;
+    } catch (e) {
+      console.warn("Postgres getCounselingAppointments failed, falling back to memoryStore:", e);
+    }
+  }
+  let list = memoryStore.counseling_appointments || [];
+  if (filters?.studentId) {
+    list = list.filter((a) => a.student_id === filters.studentId);
+  }
+  if (filters?.teacherId) {
+    list = list.filter((a) => a.teacher_id === filters.teacherId);
+  }
+  if (filters?.userId) {
+    list = list.filter((a) => a.student_user_id === filters.userId || a.teacher_user_id === filters.userId);
+  }
+  return list.sort((a, b) => (a.requested_date + a.requested_time).localeCompare(b.requested_date + b.requested_time));
+}
+async function createCounselingAppointment(data) {
+  const newAppointment = {
+    id: data.id || `apt-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    student_id: data.student_id || "",
+    student_user_id: data.student_user_id || "",
+    student_name: data.student_name || "",
+    student_class_name: data.student_class_name || "",
+    teacher_id: data.teacher_id || "",
+    teacher_user_id: data.teacher_user_id || "",
+    teacher_name: data.teacher_name || "",
+    requested_date: data.requested_date || "",
+    requested_time: data.requested_time || "",
+    confirmed_date: data.confirmed_date,
+    confirmed_time: data.confirmed_time,
+    topic: data.topic || "",
+    counseling_type: data.counseling_type || "tatap_muka",
+    status: data.status || "menunggu",
+    reschedule_reason: data.reschedule_reason,
+    notes: data.notes,
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query(
+        `INSERT INTO counseling_appointments (
+          id, student_id, student_user_id, student_name, student_class_name,
+          teacher_id, teacher_user_id, teacher_name, requested_date, requested_time,
+          confirmed_date, confirmed_time, topic, counseling_type, status,
+          reschedule_reason, notes, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+        [
+          newAppointment.id,
+          newAppointment.student_id,
+          newAppointment.student_user_id,
+          newAppointment.student_name,
+          newAppointment.student_class_name,
+          newAppointment.teacher_id,
+          newAppointment.teacher_user_id,
+          newAppointment.teacher_name,
+          newAppointment.requested_date,
+          newAppointment.requested_time,
+          newAppointment.confirmed_date || null,
+          newAppointment.confirmed_time || null,
+          newAppointment.topic,
+          newAppointment.counseling_type,
+          newAppointment.status,
+          newAppointment.reschedule_reason || null,
+          newAppointment.notes || null,
+          newAppointment.created_at,
+          newAppointment.updated_at
+        ]
+      );
+    } catch (e) {
+      console.warn("Postgres createCounselingAppointment failed:", e);
+    }
+  }
+  if (!memoryStore.counseling_appointments) {
+    memoryStore.counseling_appointments = [];
+  }
+  const idx = memoryStore.counseling_appointments.findIndex((a) => a.id === newAppointment.id);
+  if (idx >= 0) {
+    memoryStore.counseling_appointments[idx] = newAppointment;
+  } else {
+    memoryStore.counseling_appointments.push(newAppointment);
+  }
+  return newAppointment;
+}
+async function acceptCounselingAppointment(id, notes) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        `UPDATE counseling_appointments
+         SET status = 'disetujui', notes = COALESCE($1, notes), updated_at = $2
+         WHERE id = $3
+         RETURNING *`,
+        [notes || null, now, id]
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn("Postgres acceptCounselingAppointment failed:", e);
+    }
+  }
+  const apt = memoryStore.counseling_appointments?.find((a) => a.id === id);
+  if (apt) {
+    apt.status = "disetujui";
+    if (notes) apt.notes = notes;
+    apt.updated_at = now;
+    return apt;
+  }
+  return null;
+}
+async function rescheduleCounselingAppointment(id, newDate, newTime, reason) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        `UPDATE counseling_appointments
+         SET status = 'dijadwalkan_ulang', confirmed_date = $1, confirmed_time = $2, reschedule_reason = $3, updated_at = $4
+         WHERE id = $5
+         RETURNING *`,
+        [newDate, newTime, reason, now, id]
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn("Postgres rescheduleCounselingAppointment failed:", e);
+    }
+  }
+  const apt = memoryStore.counseling_appointments?.find((a) => a.id === id);
+  if (apt) {
+    apt.status = "dijadwalkan_ulang";
+    apt.confirmed_date = newDate;
+    apt.confirmed_time = newTime;
+    apt.reschedule_reason = reason;
+    apt.updated_at = now;
+    return apt;
+  }
+  return null;
+}
+async function completeCounselingAppointment(id, notes) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        `UPDATE counseling_appointments
+         SET status = 'selesai', notes = COALESCE($1, notes), updated_at = $2
+         WHERE id = $3
+         RETURNING *`,
+        [notes || null, now, id]
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn("Postgres completeCounselingAppointment failed:", e);
+    }
+  }
+  const apt = memoryStore.counseling_appointments?.find((a) => a.id === id);
+  if (apt) {
+    apt.status = "selesai";
+    if (notes) apt.notes = notes;
+    apt.updated_at = now;
+    return apt;
+  }
+  return null;
+}
+async function cancelCounselingAppointment(id, reason) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        `UPDATE counseling_appointments
+         SET status = 'dibatalkan', reschedule_reason = COALESCE($1, reschedule_reason), updated_at = $2
+         WHERE id = $3
+         RETURNING *`,
+        [reason || null, now, id]
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn("Postgres cancelCounselingAppointment failed:", e);
+    }
+  }
+  const apt = memoryStore.counseling_appointments?.find((a) => a.id === id);
+  if (apt) {
+    apt.status = "dibatalkan";
+    if (reason) apt.reschedule_reason = reason;
+    apt.updated_at = now;
+    return apt;
+  }
+  return null;
+}
 
 // server/routes.ts
 var apiRouter = Router();
@@ -24348,13 +24802,55 @@ apiRouter.get("/teachers/bk", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+apiRouter.get("/announcements", async (req, res) => {
+  try {
+    const list = await getAnnouncements();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.post("/announcements", async (req, res) => {
+  try {
+    const { title, content } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: "Judul dan isi pengumuman tidak boleh kosong" });
+    }
+    const created = await createAnnouncement(req.body);
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.put("/announcements/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await updateAnnouncement(id, req.body);
+    if (!updated) {
+      return res.status(404).json({ error: "Pengumuman tidak ditemukan" });
+    }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.delete("/announcements/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await deleteAnnouncement(id);
+    res.json({ success: true, message: "Pengumuman berhasil dihapus" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 apiRouter.post("/reports", async (req, res) => {
   try {
-    const { userId, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy } = req.body;
+    const { id, userId, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, attachments } = req.body;
     if (!userId || !category_id || !assigned_to || !title || !description || !urgency || !privacy) {
       return res.status(400).json({ error: "Field wajib belum lengkap diisi" });
     }
     const newReport = await createReport({
+      id,
       userId,
       category_id,
       assigned_to,
@@ -24362,7 +24858,8 @@ apiRouter.post("/reports", async (req, res) => {
       title,
       description,
       urgency,
-      privacy
+      privacy,
+      attachments: Array.isArray(attachments) ? attachments : []
     });
     res.status(201).json(newReport);
   } catch (err) {
@@ -24411,14 +24908,36 @@ apiRouter.delete("/reports/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+apiRouter.get("/reports/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = await getReportById(id);
+    if (!data || !data.report) {
+      return res.status(404).json({ error: "Laporan tidak ditemukan" });
+    }
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.get("/reports/:id/messages", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const messages = await getReportMessages(id);
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 apiRouter.post("/reports/:id/messages", async (req, res) => {
   try {
     const { id } = req.params;
-    const { senderId, message } = req.body;
-    if (!senderId || !message || !message.trim()) {
-      return res.status(400).json({ error: "Pesan tidak boleh kosong" });
+    const { senderId, message, attachment } = req.body;
+    const trimmedMsg = (message || "").trim();
+    if (!senderId || !trimmedMsg && !attachment?.url) {
+      return res.status(400).json({ error: "Pesan atau lampiran tidak boleh kosong" });
     }
-    const newMsg = await addMessage(id, senderId, message.trim());
+    const newMsg = await addMessage(id, senderId, trimmedMsg, attachment);
     res.status(201).json(newMsg);
   } catch (err) {
     const isForbidden = err.message && err.message.includes("Siswa tidak dapat mengirim pesan");
@@ -24460,11 +24979,88 @@ apiRouter.post("/reset", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+apiRouter.get("/counseling/appointments", async (req, res) => {
+  try {
+    const { studentId, teacherId, userId } = req.query;
+    const list = await getCounselingAppointments({
+      studentId,
+      teacherId,
+      userId
+    });
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.post("/counseling/appointments", async (req, res) => {
+  try {
+    const created = await createCounselingAppointment(req.body);
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.patch("/counseling/appointments/:id/accept", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    const updated = await acceptCounselingAppointment(id, notes);
+    if (!updated) {
+      return res.status(404).json({ error: "Data janji konseling tidak ditemukan" });
+    }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.patch("/counseling/appointments/:id/reschedule", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newDate, newTime, reason } = req.body;
+    if (!newDate || !newTime || !reason) {
+      return res.status(400).json({ error: "Tanggal baru, jam baru, dan alasan perubahan jadwal wajib diisi" });
+    }
+    const updated = await rescheduleCounselingAppointment(id, newDate, newTime, reason);
+    if (!updated) {
+      return res.status(404).json({ error: "Data janji konseling tidak ditemukan" });
+    }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.patch("/counseling/appointments/:id/complete", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    const updated = await completeCounselingAppointment(id, notes);
+    if (!updated) {
+      return res.status(404).json({ error: "Data janji konseling tidak ditemukan" });
+    }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+apiRouter.patch("/counseling/appointments/:id/cancel", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const updated = await cancelCounselingAppointment(id, reason);
+    if (!updated) {
+      return res.status(404).json({ error: "Data janji konseling tidak ditemukan" });
+    }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // server/app.ts
 var app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.use("/api", apiRouter);
 app.use("/", apiRouter);
 app.use((req, res) => {
