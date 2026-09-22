@@ -355,51 +355,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
           </div>
 
           <div className="flex flex-wrap items-stretch sm:items-center gap-2.5 sm:gap-3 w-full xl:w-auto">
-            <button
-              type="button"
-              onClick={() => onNavigate('mood-check')}
-              className="flex-1 sm:flex-initial px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer group whitespace-nowrap"
-            >
-              <Heart className="w-4 h-4 fill-white/20 group-hover:scale-110 transition-transform shrink-0" />
-              <span>Rekap Mood Siswa</span>
-              {counselingMoodCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-white text-rose-700 text-[10px] font-extrabold animate-pulse">
-                  {counselingMoodCount} Butuh Konseling
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onNavigate('announcements')}
-              className="flex-1 sm:flex-initial px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-white text-slate-900 hover:bg-blue-50 font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
-            >
-              <Megaphone className="w-4 h-4 text-blue-600 shrink-0" />
-              <span>Pengumuman Siswa</span>
-            </button>
-
-            {isBK && (
-              <button
-                type="button"
-                onClick={() =>
-                  setActiveDashboardTab(activeDashboardTab === 'counseling' ? 'reports' : 'counseling')
-                }
-                className={`flex-1 sm:flex-initial px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
-                  activeDashboardTab === 'counseling'
-                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 ring-2 ring-white'
-                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                }`}
-              >
-                <CalendarDays className="w-4 h-4 shrink-0" />
-                <span>{activeDashboardTab === 'counseling' ? 'Lihat Laporan Siswa' : 'Jadwal Konseling'}</span>
-                {pendingCounselingCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold animate-pulse">
-                    {pendingCounselingCount} Baru
-                  </span>
-                )}
-              </button>
-            )}
-
             <div className="w-full sm:w-auto bg-white/10 border border-white/15 backdrop-blur rounded-xl sm:rounded-2xl p-3 sm:p-4 text-left">
               <span className="text-[11px] text-blue-200 block font-medium">Kewenangan Akses:</span>
               <p className="text-xs font-bold text-white mt-0.5">

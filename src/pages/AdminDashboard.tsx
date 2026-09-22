@@ -109,9 +109,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   useEffect(() => {
     loadServerStatus();
-  }, [tick]);
+    db.syncFromBackend().then(() => {
+      loadServerStatus();
+      setTick(t => t + 1);
+    });
+    const unsub = db.subscribe(() => {
+      setTick(t => t + 1);
+    });
+    return () => unsub();
+  }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
+    await db.syncFromBackend();
+    await loadServerStatus();
     setTick(t => t + 1);
   };
 
@@ -123,6 +133,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const categories = rawTables.categories;
   const reports = rawTables.reports;
   const messages = rawTables.messages;
+
+  // Real-time synchronization counts from live database (Supabase/PostgreSQL) or current store
+  const displayStudentCount = serverStatus?.counts?.students !== undefined ? serverStatus.counts.students : students.length;
+  const displayClassCount = serverStatus?.counts?.classes !== undefined ? serverStatus.counts.classes : classes.length;
+  const displayTeacherCount = serverStatus?.counts?.teachers !== undefined ? serverStatus.counts.teachers : teachers.length;
+  const displayReportCount = serverStatus?.counts?.reports !== undefined ? serverStatus.counts.reports : reports.length;
 
   // Actively test live connection between backend (Vercel) and database provider (Supabase)
   const handleTestDatabase = async () => {
@@ -381,25 +397,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
           <div className="p-3 bg-slate-50 rounded-xl">
             <span className="text-[11px] text-slate-500 font-medium block">Rombel Kelas Terdaftar</span>
-            <span className="text-base font-extrabold text-slate-900">{classes.length} Kelas</span>
-            <span className="text-[10px] text-slate-400 block">X, XI, XII (11 Jurusan)</span>
+            <span className="text-base font-extrabold text-slate-900">{displayClassCount} Kelas</span>
+            <span className="text-[10px] text-slate-400 block">
+              {displayClassCount === 0 ? 'Belum ada rombel' : 'X, XI, XII (11 Jurusan)'}
+            </span>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl">
             <span className="text-[11px] text-slate-500 font-medium block">Tenaga Guru Terdata</span>
-            <span className="text-base font-extrabold text-slate-900">{teachers.length} Guru</span>
-            <span className="text-[10px] text-slate-400 block">10 BK + 33 Wali Mapel</span>
+            <span className="text-base font-extrabold text-slate-900">{displayTeacherCount} Guru</span>
+            <span className="text-[10px] text-slate-400 block">
+              {displayTeacherCount === 0
+                ? 'Belum ada guru terdata'
+                : `${teachers.filter(t => t.teacher_type === 'guru_bk').length} BK + ${teachers.filter(t => t.teacher_type === 'wali_kelas').length} Wali Mapel`}
+            </span>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl">
             <span className="text-[11px] text-slate-500 font-medium block">Siswa Aktif</span>
-            <span className="text-base font-extrabold text-slate-900">{students.length} Siswa</span>
-            <span className="text-[10px] text-slate-400 block">34 Siswa per Rombel</span>
+            <span className="text-base font-extrabold text-slate-900">{displayStudentCount} Siswa</span>
+            <span className="text-[10px] text-slate-400 block">
+              {displayStudentCount === 0 ? 'Data siswa di database kosong' : `${displayStudentCount} Siswa terdaftar`}
+            </span>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl">
             <span className="text-[11px] text-slate-500 font-medium block">Status Sinkronisasi</span>
-            <span className="text-base font-extrabold text-emerald-600">Sinkron</span>
+            <span className={`text-base font-extrabold ${serverStatus?.isPostgres ? 'text-emerald-600' : 'text-blue-600'}`}>
+              {serverStatus?.isPostgres ? 'Sinkron Cloud' : 'Lokal'}
+            </span>
             <span className="text-[10px] text-slate-400 block">Pembaruan: {lastSyncTime}</span>
           </div>
         </div>
@@ -491,15 +517,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
               <span className="text-xs font-semibold text-slate-500">Total Siswa Terdaftar</span>
-              <p className="text-3xl font-extrabold text-slate-900 mt-2">{students.length}</p>
-              <span className="text-[11px] text-slate-400 mt-0.5 block">Di {classes.length} kelas jurusan</span>
+              <p className="text-3xl font-extrabold text-slate-900 mt-2">{displayStudentCount}</p>
+              <span className="text-[11px] text-slate-400 mt-0.5 block">
+                {displayStudentCount === 0 ? 'Data siswa di database kosong' : `Di ${displayClassCount} kelas jurusan`}
+              </span>
             </div>
 
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
               <span className="text-xs font-semibold text-slate-500">Tenaga Pendidik</span>
-              <p className="text-3xl font-extrabold text-slate-900 mt-2">{teachers.length}</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-2">{displayTeacherCount}</p>
               <span className="text-[11px] text-slate-400 mt-0.5 block">
-                {teachers.filter(t => t.teacher_type === 'guru_bk').length} Guru BK, {teachers.filter(t => t.teacher_type === 'wali_kelas').length} Wali Kelas
+                {displayTeacherCount === 0
+                  ? 'Belum ada guru terdata'
+                  : `${teachers.filter(t => t.teacher_type === 'guru_bk').length} Guru BK, ${teachers.filter(t => t.teacher_type === 'wali_kelas').length} Wali Kelas`}
               </span>
             </div>
 
@@ -511,7 +541,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span className="text-xs font-semibold text-purple-700">Total Laporan Masuk</span>
                 <ArrowRight className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-600 transition" />
               </div>
-              <p className="text-3xl font-extrabold text-purple-950 mt-2">{reports.length}</p>
+              <p className="text-3xl font-extrabold text-purple-950 mt-2">{displayReportCount}</p>
               <span className="text-[11px] text-purple-600 mt-0.5 block font-medium">Klik untuk kelola laporan</span>
             </div>
 

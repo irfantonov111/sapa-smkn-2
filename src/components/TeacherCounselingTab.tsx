@@ -34,7 +34,7 @@ export const TeacherCounselingTab: React.FC = () => {
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [scopeFilter, setScopeFilter] = useState<'my_assigned' | 'all'>('my_assigned');
+  const [sortBy, setSortBy] = useState<'terbaru' | 'terlama' | 'jadwal_terdekat'>('terbaru');
 
   // Modals
   const [acceptModalApt, setAcceptModalApt] = useState<CounselingAppointment | null>(null);
@@ -55,20 +55,6 @@ export const TeacherCounselingTab: React.FC = () => {
   const currentTeacherId = teacherProfile?.id || teacherRecord?.id;
   const currentUserId = currentUser?.id || teacherProfile?.user_id || teacherRecord?.user_id;
 
-  const loadData = () => {
-    const list = db.getCounselingAppointments();
-    setAppointments(list);
-  };
-
-  useEffect(() => {
-    loadData();
-    const unsub = db.subscribe(() => {
-      loadData();
-      setRefreshTick(t => t + 1);
-    });
-    return () => unsub();
-  }, []);
-
   const isAssignedToMe = (apt: CounselingAppointment) => {
     if (!currentTeacherId && !currentUserId) return false;
     return (
@@ -79,20 +65,33 @@ export const TeacherCounselingTab: React.FC = () => {
     );
   };
 
-  // Metrics
-  const myAppointments = useMemo(() => {
-    return appointments.filter(isAssignedToMe);
-  }, [appointments, currentTeacherId, currentUserId, currentUser]);
+  const loadData = () => {
+    const list = db.getCounselingAppointments({
+      teacher_id: currentTeacherId,
+      teacher_user_id: currentUserId
+    });
+    // Strict privacy boundary: only appointments assigned to this logged-in teacher
+    setAppointments(list.filter(isAssignedToMe));
+  };
 
-  const targetList = scopeFilter === 'my_assigned' ? myAppointments : appointments;
+  useEffect(() => {
+    loadData();
+    db.fetchCounselingAppointments().then(() => loadData());
+    const unsub = db.subscribe(() => {
+      loadData();
+      setRefreshTick(t => t + 1);
+    });
+    return () => unsub();
+  }, [currentTeacherId, currentUserId]);
 
-  const pendingCount = targetList.filter(a => a.status === 'menunggu').length;
-  const approvedCount = targetList.filter(a => a.status === 'disetujui' || a.status === 'dijadwalkan_ulang').length;
-  const completedCount = targetList.filter(a => a.status === 'selesai').length;
-  const totalCount = targetList.length;
+  // Metrics (strictly for this teacher's appointments)
+  const pendingCount = appointments.filter(a => a.status === 'menunggu').length;
+  const approvedCount = appointments.filter(a => a.status === 'disetujui' || a.status === 'dijadwalkan_ulang').length;
+  const completedCount = appointments.filter(a => a.status === 'selesai').length;
+  const totalCount = appointments.length;
 
   const filteredAppointments = useMemo(() => {
-    return targetList.filter(apt => {
+    const list = appointments.filter(apt => {
       if (statusFilter !== 'all' && apt.status !== statusFilter) return false;
 
       if (searchQuery.trim()) {
@@ -100,13 +99,43 @@ export const TeacherCounselingTab: React.FC = () => {
         const matchStudent = apt.student_name.toLowerCase().includes(q);
         const matchClass = (apt.student_class_name || '').toLowerCase().includes(q);
         const matchTopic = apt.topic.toLowerCase().includes(q);
-        const matchTeacher = (apt.teacher_name || '').toLowerCase().includes(q);
-        if (!matchStudent && !matchClass && !matchTopic && !matchTeacher) return false;
+        if (!matchStudent && !matchClass && !matchTopic) return false;
       }
 
       return true;
     });
-  }, [targetList, statusFilter, searchQuery]);
+
+    const getScheduledTimestamp = (apt: CounselingAppointment) => {
+      const d = apt.confirmed_date || apt.requested_date;
+      const t = apt.confirmed_time || apt.requested_time || '00:00';
+      const parsed = new Date(`${d}T${t}:00`).getTime();
+      return isNaN(parsed) ? 0 : parsed;
+    };
+
+    if (sortBy === 'terbaru') {
+      // Diajukan terbaru (created_at descending)
+      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    } else if (sortBy === 'terlama') {
+      // Diajukan terlama (created_at ascending)
+      list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    } else if (sortBy === 'jadwal_terdekat') {
+      // Jadwal paling dekat ke waktu sekarang
+      const now = Date.now();
+      list.sort((a, b) => {
+        const timeA = getScheduledTimestamp(a);
+        const timeB = getScheduledTimestamp(b);
+        const isUpcomingA = timeA >= now - 1000 * 60 * 60 * 24;
+        const isUpcomingB = timeB >= now - 1000 * 60 * 60 * 24;
+
+        if (isUpcomingA && !isUpcomingB) return -1;
+        if (!isUpcomingA && isUpcomingB) return 1;
+        if (isUpcomingA && isUpcomingB) return timeA - timeB;
+        return timeB - timeA;
+      });
+    }
+
+    return list;
+  }, [appointments, statusFilter, searchQuery, sortBy]);
 
   // Handlers
   const handleOpenAccept = (apt: CounselingAppointment) => {
@@ -353,37 +382,52 @@ export const TeacherCounselingTab: React.FC = () => {
 
       {/* Main Table Card */}
       <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
-        {/* Scope and Search Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center p-1 bg-slate-100 rounded-2xl gap-1">
+        {/* Filters and Search Bar */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          {/* Sorting Filters */}
+          <div className="flex items-center flex-wrap gap-1.5 p-1 bg-slate-100 rounded-2xl">
+            <span className="text-[11px] font-bold text-slate-500 px-2 py-1 flex items-center gap-1">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <span>Urutkan:</span>
+            </span>
+
             <button
               type="button"
-              onClick={() => setScopeFilter('my_assigned')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                scopeFilter === 'my_assigned'
+              onClick={() => setSortBy('terbaru')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                sortBy === 'terbaru'
                   ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>Ditujukan ke Saya</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 text-indigo-800">
-                {myAppointments.length}
-              </span>
+              <Clock className="w-3.5 h-3.5" />
+              <span>Terbaru</span>
             </button>
 
             <button
               type="button"
-              onClick={() => setScopeFilter('all')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                scopeFilter === 'all'
-                  ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+              onClick={() => setSortBy('terlama')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                sortBy === 'terlama'
+                  ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>Semua Guru BK</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700">
-                {appointments.length}
-              </span>
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Terlama</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSortBy('jadwal_terdekat')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                sortBy === 'jadwal_terdekat'
+                  ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarClock className="w-3.5 h-3.5" />
+              <span>Jadwal Paling Dekat</span>
             </button>
           </div>
 

@@ -531,26 +531,39 @@ class DatabaseService {
       const json = await res.json();
       if (json.success && json.data) {
         const d = json.data;
+        const isDbLive = Boolean(json.database?.isPostgres) || Boolean(json.database?.connected);
         let updated = false;
-        if (Array.isArray(d.classes) && d.classes.length > 0) {
-          this.state.classes = d.classes;
-          updated = true;
+
+        // When connected to live database, strictly synchronize tables even if rows are empty (0 rows)
+        if (Array.isArray(d.classes)) {
+          if (isDbLive || d.classes.length > 0) {
+            this.state.classes = d.classes;
+            updated = true;
+          }
         }
-        if (Array.isArray(d.users) && d.users.length > 0) {
-          this.state.users = d.users;
-          updated = true;
+        if (Array.isArray(d.users)) {
+          if (isDbLive || d.users.length > 0) {
+            this.state.users = d.users;
+            updated = true;
+          }
         }
-        if (Array.isArray(d.students) && d.students.length > 0) {
-          this.state.students = d.students;
-          updated = true;
+        if (Array.isArray(d.students)) {
+          if (isDbLive || d.students.length > 0) {
+            this.state.students = d.students;
+            updated = true;
+          }
         }
-        if (Array.isArray(d.teachers) && d.teachers.length > 0) {
-          this.state.teachers = d.teachers;
-          updated = true;
+        if (Array.isArray(d.teachers)) {
+          if (isDbLive || d.teachers.length > 0) {
+            this.state.teachers = d.teachers;
+            updated = true;
+          }
         }
-        if (Array.isArray(d.categories) && d.categories.length > 0) {
-          this.state.categories = d.categories;
-          updated = true;
+        if (Array.isArray(d.categories)) {
+          if (isDbLive || d.categories.length > 0) {
+            this.state.categories = d.categories;
+            updated = true;
+          }
         }
         if (Array.isArray(d.reports)) {
           // Merge with local reports so attachments and locally-cached updates are not lost
@@ -585,9 +598,11 @@ class DatabaseService {
             updated = true;
           }
         }
-        if (Array.isArray(d.counseling_appointments) && d.counseling_appointments.length > 0) {
-          this.state.counseling_appointments = d.counseling_appointments;
-          updated = true;
+        if (Array.isArray(d.counseling_appointments)) {
+          if (isDbLive || d.counseling_appointments.length > 0) {
+            this.state.counseling_appointments = d.counseling_appointments;
+            updated = true;
+          }
         }
 
         if (updated) {
