@@ -2328,7 +2328,7 @@ class DatabaseService {
     return { success: syncRes.success, count: deletedCount, error: syncRes.error };
   }
 
-  public addStudent(data: { name: string; email: string; nis: string; class_id: string; gender?: Gender }): void {
+  public addStudent(data: { name: string; email: string; nis: string; class_id: string; gender?: Gender; phone?: string }): void {
     const now = new Date().toISOString();
     const defaultPass = `siswa${data.nis.slice(-4)}`;
     const randomSuffix = Math.random().toString(36).substring(2, 9);
@@ -2339,6 +2339,7 @@ class DatabaseService {
       email: data.email,
       role: 'siswa',
       gender,
+      phone: data.phone || '',
       avatar: getDefaultAvatarByGender('siswa', gender),
       password: hashPassword(defaultPass),
       password_changed: false,
@@ -2363,6 +2364,7 @@ class DatabaseService {
       email: data.email,
       nis: data.nis,
       gender,
+      phone: data.phone || '',
       class_id: data.class_id,
       password: defaultPass
     });

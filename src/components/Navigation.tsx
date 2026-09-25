@@ -55,7 +55,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
     navItems = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'inbox', label: 'Laporan Masuk', icon: Inbox },
-      ...(isBK ? [{ id: 'counseling', label: 'Jadwal Konseling', icon: CalendarDays, badge: pendingCounseling }] : []),
+      { id: 'counseling', label: 'Jadwal Konseling', icon: CalendarDays, badge: pendingCounseling },
       { id: 'mood-check', label: 'Rekap Mood Siswa', icon: HeartHandshake },
       { id: 'announcements', label: 'Pengumuman', icon: Megaphone },
       { id: 'notifications', label: 'Notifikasi', icon: Bell, badge: unreadNotifs }

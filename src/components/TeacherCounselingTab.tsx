@@ -25,7 +25,8 @@ import {
   User,
   GraduationCap,
   ArrowLeft,
-  ChevronLeft
+  ChevronLeft,
+  Printer
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -34,6 +35,7 @@ import {
   CounselingAppointmentStatus,
   CounselingType
 } from '../types/database';
+import { PrintCounselingModal } from './PrintCounselingModal';
 
 interface TeacherCounselingTabProps {
   onNavigate?: (tab: string, reportId?: string) => void;
@@ -85,6 +87,7 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
 
   const [deleteModalApt, setDeleteModalApt] = useState<CounselingAppointment | null>(null);
   const [detailModalApt, setDetailModalApt] = useState<CounselingAppointment | null>(null);
+  const [printAppointment, setPrintAppointment] = useState<CounselingAppointment | null>(null);
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -93,7 +96,19 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
   const currentTeacherId = teacherProfile?.id || teacherRecord?.id;
   const currentUserId = currentUser?.id || teacherProfile?.user_id || teacherRecord?.user_id;
 
+  const isWali = teacherProfile?.teacher_type === 'wali_kelas' || teacherRecord?.teacher_type === 'wali_kelas';
+  const managedClass = isWali
+    ? db.getClasses().find(c => c.homeroom_teacher_id === currentTeacherId || c.homeroom_teacher_id === currentUserId)
+    : undefined;
+
   const isAssignedToMe = (apt: CounselingAppointment) => {
+    // If user is Wali Kelas, they can access counseling appointments for students in their perwalian class
+    if (isWali && managedClass) {
+      if (apt.student_class_name && apt.student_class_name.toLowerCase() === managedClass.name.toLowerCase()) {
+        return true;
+      }
+    }
+
     if (!currentTeacherId && !currentUserId) return false;
     return (
       (currentTeacherId && apt.teacher_id === currentTeacherId) ||
@@ -104,11 +119,17 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
   };
 
   const loadData = () => {
-    const list = db.getCounselingAppointments({
-      teacher_id: currentTeacherId,
-      teacher_user_id: currentUserId
-    });
-    // Strict privacy boundary: only appointments assigned to this logged-in teacher
+    // For Wali Kelas, retrieve all counseling appointments and filter for their managed class
+    let list: CounselingAppointment[] = [];
+    if (isWali) {
+      list = db.getCounselingAppointments();
+    } else {
+      list = db.getCounselingAppointments({
+        teacher_id: currentTeacherId,
+        teacher_user_id: currentUserId
+      });
+    }
+    // Strict privacy boundary: only appointments assigned to this logged-in teacher or their perwalian class
     setAppointments(list.filter(isAssignedToMe));
   };
 
@@ -847,7 +868,7 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
                         </>
                       )}
 
-                      {/* CRUD Actions: Detail, Edit, Hapus */}
+                      {/* CRUD Actions: Detail, Edit, Hapus, Cetak PDF */}
                       <button
                         type="button"
                         onClick={() => handleOpenDetail(apt)}
@@ -856,6 +877,16 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
                       >
                         <Eye className="w-3.5 h-3.5 text-slate-500" />
                         <span className="hidden sm:inline">Detail</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPrintAppointment(apt)}
+                        className="px-2.5 py-1.5 rounded-xl border border-indigo-200 hover:bg-indigo-50 text-indigo-700 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        title="Cetak Surat Bukti Jadwal Konseling ke PDF"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                        <span className="hidden sm:inline">Cetak PDF</span>
                       </button>
 
                       <button
@@ -1408,7 +1439,19 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
               </div>
 
               {/* Action Buttons in Detail Modal */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const apt = detailModalApt;
+                    setPrintAppointment(apt);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Jadwal PDF</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1416,7 +1459,7 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
                     setDetailModalApt(null);
                     handleOpenEdit(apt);
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition flex items-center gap-1.5"
+                  className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
                 >
                   <Pencil className="w-3.5 h-3.5" />
                   <span>Edit Data</span>
@@ -1673,6 +1716,15 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Cetak Jadwal Konseling PDF */}
+      {printAppointment && (
+        <PrintCounselingModal
+          isOpen={!!printAppointment}
+          onClose={() => setPrintAppointment(null)}
+          appointment={printAppointment}
+        />
       )}
     </div>
   );

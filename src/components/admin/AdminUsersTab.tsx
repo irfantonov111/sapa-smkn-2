@@ -64,6 +64,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
   // Filters
   const [roleFilter, setRoleFilter] = useState<'all' | 'guru_bk' | 'wali_kelas' | 'siswa' | 'admin'>('all');
+  const [classFilter, setClassFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Bulk deletion multi-select state
@@ -126,6 +127,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     siswaCount: number;
     bkCount: number;
     waliCount: number;
+    kelasCount?: number;
     message: string;
   } | null>(null);
 
@@ -201,49 +203,107 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     }
   };
 
+  // Helper to match teacher by NIP, email, or name
+  const findTeacherMatch = (val: string, prefType?: 'guru_bk' | 'wali_kelas'): Teacher | undefined => {
+    if (!val || val === '-' || val.trim() === '') return undefined;
+    const raw = val.trim().toLowerCase();
+    const allTeachers = db.getTeachers();
+
+    // 1. By NIP (exact or contained)
+    const byNip = allTeachers.find(t => {
+      const plainNip = decryptNip(t.nip).toLowerCase();
+      const rawNip = t.nip.toLowerCase();
+      return (plainNip && raw.includes(plainNip)) || (rawNip && raw.includes(rawNip));
+    });
+    if (byNip) return byNip;
+
+    // 2. By Email
+    const byEmail = allTeachers.find(t => {
+      const u = db.getUserById(t.user_id);
+      return u && raw.includes(u.email.toLowerCase());
+    });
+    if (byEmail) return byEmail;
+
+    // 3. By Name
+    const byName = allTeachers.find(t => {
+      const u = db.getUserById(t.user_id);
+      if (!u) return false;
+      const tName = u.name.toLowerCase();
+      return raw.includes(tName) || tName.includes(raw);
+    });
+    if (byName) return byName;
+
+    if (prefType) {
+      return allTeachers.find(t => t.teacher_type === prefType);
+    }
+    return undefined;
+  };
+
   // 1. Download Excel Template with comprehensive sheets and guidelines
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
 
-    // Sheet 1: Siswa
+    // Sheet 1: Data Kelas (Rombel, Wali Kelas, dan Guru BK)
+    const classRows = [
+      ['Nama Kelas', 'Tingkat (10/11/12)', 'Jurusan', 'Wali Kelas (Nama / NIP)', 'Guru BK (Nama / NIP)', 'Tahun Ajaran'],
+      ['X PPLG 1', '10', 'Pengembangan Perangkat Lunak & Gim', 'Drs. Ahmad Fauzi, M.Kom', 'Dra. Hj. Ratna Dewi, M.Pd', '2024/2025'],
+      ['XI TKJ 2', '11', 'Teknik Komputer & Jaringan', 'Rina Kartika, S.Pd', 'Bambang Irawan, S.Pd., Kons.', '2024/2025'],
+      ['XII DKV 1', '12', 'Desain Komunikasi Visual', 'Drs. Ahmad Fauzi, M.Kom', 'Dra. Hj. Ratna Dewi, M.Pd', '2024/2025']
+    ];
+    const wsClass = XLSX.utils.aoa_to_sheet(classRows);
+    wsClass['!cols'] = [{ wch: 18 }, { wch: 20 }, { wch: 34 }, { wch: 32 }, { wch: 32 }, { wch: 16 }];
+
+    // Sheet 2: Siswa
     const studentRows = [
-      ['Nama', 'Jenis Kelamin (L/P)', 'NIS', 'Kelas', 'Email'],
-      ['Dimas Aditya Pratama', 'L', '24250101', 'X PPLG 1', 'dimas.aditya@siswa.belajar.id'],
-      ['Anisa Rahmawati', 'P', '24250102', 'XI TKJ 2', 'anisa.rahma@siswa.belajar.id'],
-      ['Bagas Alamsyah', 'L', '24250103', 'XII DKV 1', 'bagas.alamsyah@siswa.belajar.id']
+      ['Nama', 'Jenis Kelamin (L/P)', 'NIS', 'Kelas', 'Email', 'No HP'],
+      ['Dimas Aditya Pratama', 'L', '24250101', 'X PPLG 1', 'dimas.aditya@siswa.belajar.id', '081234567801'],
+      ['Anisa Rahmawati', 'P', '24250102', 'XI TKJ 2', 'anisa.rahma@siswa.belajar.id', '081234567802'],
+      ['Bagas Alamsyah', 'L', '24250103', 'XII DKV 1', 'bagas.alamsyah@siswa.belajar.id', '081234567803']
     ];
     const wsStudent = XLSX.utils.aoa_to_sheet(studentRows);
+    wsStudent['!cols'] = [{ wch: 28 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 32 }, { wch: 18 }];
 
-    // Sheet 2: Guru BK
+    // Sheet 3: Guru BK
     const bkRows = [
       ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Spesialisasi', 'Ruangan'],
       ['Dra. Hj. Ratna Dewi, M.Pd', 'P', 'ratna.dewi@guru.belajar.id', '197508121999032001', '081234567891', 'Konseling Pribadi, Sosial & Bullying', 'Ruang BK 1 (Lt. 2)'],
       ['Bambang Irawan, S.Pd., Kons.', 'L', 'bambang.konseling@guru.belajar.id', '198203142006041002', '081234567892', 'Layanan Karir & Konsultasi Belajar', 'Ruang BK 2 (Lt. 2)']
     ];
     const wsBK = XLSX.utils.aoa_to_sheet(bkRows);
+    wsBK['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 32 }, { wch: 22 }, { wch: 18 }, { wch: 35 }, { wch: 22 }];
 
-    // Sheet 3: Wali Kelas
+    // Sheet 4: Wali Kelas
     const waliRows = [
       ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Kelas Binaan'],
       ['Drs. Ahmad Fauzi, M.Kom', 'L', 'ahmad.fauzi@guru.belajar.id', '197805122005011003', '081234567893', 'X PPLG 1'],
       ['Rina Kartika, S.Pd', 'P', 'rina.kartika@guru.belajar.id', '198506202009022004', '081234567894', 'XI TKJ 2']
     ];
     const wsWali = XLSX.utils.aoa_to_sheet(waliRows);
+    wsWali['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 32 }, { wch: 22 }, { wch: 18 }, { wch: 18 }];
 
-    // Sheet 4: Petunjuk Pengisian
+    // Sheet 5: Petunjuk Pengisian
     const guideRows = [
       ['PANDUAN & PETUNJUK FORMAT EXCEL APLIKASI SAPA'],
       [''],
-      ['1. PENGISIAN SHEET SISWA:'],
+      ['1. PENGISIAN SHEET DATA KELAS:'],
+      ['   - Nama Kelas: Nama rombel resmi kelas (Wajib diisi; contoh: X PPLG 1, XI TKJ 2, XII DKV 1).'],
+      ['   - Tingkat (10/11/12): Tingkat jenjang kelas (10, 11, atau 12).'],
+      ['   - Jurusan: Kompetensi keahlian kelas (contoh: Pengembangan Perangkat Lunak & Gim).'],
+      ['   - Wali Kelas (Nama / NIP): Nama lengkap atau NIP guru yang mengampu sebagai Wali Kelas (otomatis ditautkan oleh sistem).'],
+      ['   - Guru BK (Nama / NIP): Nama lengkap atau NIP Guru Bimbingan Konseling yang membina kelas tersebut (otomatis ditautkan oleh sistem).'],
+      ['   - Tahun Ajaran: Periode kalender pendidikan aktif (contoh: 2024/2025).'],
+      [''],
+      ['2. PENGISIAN SHEET SISWA:'],
       ['   - Nama: Nama lengkap peserta didik (Wajib diisi)'],
       ['   - Jenis Kelamin (L/P): Isi "L" untuk Laki-laki atau "P" untuk Perempuan (Wajib diisi; menentukan avatar profil default saat login)'],
       ['   - NIS: Nomor Induk Siswa 8 digit unik (Wajib diisi)'],
       ['   - Kelas: Nama rombel kelas (contoh: X PPLG 1, XI TKJ 2, XII DKV 1). Jika kelas belum ada, sistem akan membuat kelas otomatis.'],
-      ['   - Email: Alamat email resmi siswa (Opsional; jika kosong akan otomatis digenerate: [NIS]@siswa.belajar.id)'],
+      ['   - Email: Alamat email resmi siswa (Opsional; jika kosong otomatis: [NIS]@siswa.belajar.id)'],
+      ['   - No HP: Nomor telepon atau WhatsApp siswa / orang tua'],
       ['   - Kata sandi bawaan siswa: siswa + 4 digit terakhir NIS (contoh: siswa0101).'],
       ['   - Siswa diberikan batas 1x ganti kata sandi pribadi sesuai preferensi pada sesi login pertama.'],
       [''],
-      ['2. PENGISIAN SHEET GURU BK:'],
+      ['3. PENGISIAN SHEET GURU BK:'],
       ['   - Nama: Nama lengkap dan gelar Guru BK (Wajib diisi)'],
       ['   - Jenis Kelamin (L/P): Isi "L" untuk Laki-laki atau "P" untuk Perempuan (Wajib diisi; menentukan avatar profil default)'],
       ['   - Email: Email resmi pendidik (Wajib diisi)'],
@@ -253,7 +313,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       ['   - Ruangan: Lokasi ruang bimbingan konseling di sekolah'],
       ['   - Kata sandi default guru: guru123'],
       [''],
-      ['3. PENGISIAN SHEET WALI KELAS:'],
+      ['4. PENGISIAN SHEET WALI KELAS:'],
       ['   - Nama: Nama lengkap dan gelar Wali Kelas (Wajib diisi)'],
       ['   - Jenis Kelamin (L/P): Isi "L" untuk Laki-laki atau "P" untuk Perempuan (Wajib diisi; menentukan avatar profil default)'],
       ['   - Email: Email resmi pendidik (Wajib diisi)'],
@@ -262,19 +322,21 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       ['   - Kelas Binaan: Nama rombel yang diampu (contoh: X PPLG 1)'],
       ['   - Kata sandi default guru: guru123'],
       [''],
-      ['4. KETENTUAN FILE:'],
+      ['5. KETENTUAN FILE & INTEGRASI INTEROPERABILITAS:'],
+      ['   - Berkas hasil export data dari dashboard admin dapat langsung diimpor kembali ke sistem tanpa kendala.'],
       ['   - Simpan berkas dalam format .xlsx atau .xls.'],
       ['   - Jangan ubah nama kolom baris pertama (Header).']
     ];
     const wsGuide = XLSX.utils.aoa_to_sheet(guideRows);
 
+    XLSX.utils.book_append_sheet(wb, wsClass, 'Data Kelas');
     XLSX.utils.book_append_sheet(wb, wsStudent, 'Siswa');
     XLSX.utils.book_append_sheet(wb, wsBK, 'Guru BK');
     XLSX.utils.book_append_sheet(wb, wsWali, 'Wali Kelas');
     XLSX.utils.book_append_sheet(wb, wsGuide, 'Petunjuk Pengisian');
 
     XLSX.writeFile(wb, 'Format_Import_Data_Pengguna_SAPA.xlsx');
-    showFeedback('Template Excel berhasil diunduh. Silakan isi data dan unggah kembali.');
+    showFeedback('Template Excel berhasil diunduh. Tersedia sheet Data Kelas (Wali & BK), Siswa, Guru BK, dan Wali Kelas.');
   };
 
   // Export All Users to Excel with complete credentials (Username, Password, Role, Kelas, NIP/NIS, No HP)
@@ -282,35 +344,59 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     try {
       const wb = XLSX.utils.book_new();
 
-      // 1. Sheet Semua Pengguna
-      const allRows: (string | number)[][] = [
-        ['No', 'Kategori Akun', 'Nama Lengkap', 'Jenis Kelamin', 'Username / ID Login', 'Kata Sandi (Password)', 'Email', 'NIS / NIP', 'Kelas / Rombel', 'No. Telepon / WA', 'Status Kata Sandi']
+      // 1. Sheet Data Kelas
+      const classRows: (string | number)[][] = [
+        ['Nama Kelas', 'Tingkat', 'Jurusan', 'Wali Kelas (Nama / NIP)', 'Guru BK (Nama / NIP)', 'Tahun Ajaran', 'Jumlah Siswa']
+      ];
+      classes.forEach((c) => {
+        const wali = teachers.find(t => t.id === c.homeroom_teacher_id || t.user_id === c.homeroom_teacher_id);
+        const bk = teachers.find(t => t.id === c.bk_teacher_id || t.user_id === c.bk_teacher_id || t.assigned_class_ids?.includes(c.id));
+        const waliUser = wali ? users.find(u => u.id === wali.user_id) : undefined;
+        const bkUser = bk ? users.find(u => u.id === bk.user_id) : undefined;
+        const count = students.filter(s => s.class_id === c.id).length;
+        const waliText = waliUser && wali ? `${waliUser.name} (${decryptNip(wali.nip)})` : '-';
+        const bkText = bkUser && bk ? `${bkUser.name} (${decryptNip(bk.nip)})` : '-';
+        classRows.push([
+          c.name,
+          c.grade || '10',
+          c.major || 'Umum',
+          waliText,
+          bkText,
+          '2024/2025',
+          count
+        ]);
+      });
+      const wsClass = XLSX.utils.aoa_to_sheet(classRows);
+      wsClass['!cols'] = [
+        { wch: 18 }, { wch: 12 }, { wch: 32 }, { wch: 32 }, { wch: 32 }, { wch: 16 }, { wch: 14 }
       ];
 
       // 2. Sheet Siswa
       const studentRows: (string | number)[][] = [
-        ['No', 'Nama Lengkap Siswa', 'Jenis Kelamin', 'NIS', 'Kelas', 'Username Login (NIS)', 'Kata Sandi Default', 'Email Siswa', 'No. Telepon / WA', 'Status Akun']
+        ['Nama', 'Jenis Kelamin (L/P)', 'NIS', 'Kelas', 'Email', 'No HP', 'Kata Sandi Default', 'Status Akun']
       ];
 
       // 3. Sheet Guru BK
       const bkRows: (string | number)[][] = [
-        ['No', 'Nama Lengkap & Gelar', 'Jenis Kelamin', 'NIP', 'Username Login (Email / NIP)', 'Kata Sandi Default', 'Email Resmi', 'Spesialisasi Konseling', 'Ruangan', 'No. Telepon / WA']
+        ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Spesialisasi', 'Ruangan', 'Kata Sandi Default']
       ];
 
       // 4. Sheet Wali Kelas
       const waliRows: (string | number)[][] = [
-        ['No', 'Nama Lengkap & Gelar', 'Jenis Kelamin', 'NIP', 'Username Login (Email / NIP)', 'Kata Sandi Default', 'Email Resmi', 'Kelas Binaan', 'Ruangan', 'No. Telepon / WA']
+        ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Kelas Binaan', 'Ruangan', 'Kata Sandi Default']
       ];
 
-      // 5. Sheet Admin
+      // 5. Sheet Semua Kredensial Pengguna
+      const allRows: (string | number)[][] = [
+        ['No', 'Kategori Akun', 'Nama Lengkap', 'Jenis Kelamin', 'Username / ID Login', 'Kata Sandi (Password)', 'Email', 'NIS / NIP', 'Kelas / Rombel', 'No. Telepon / WA', 'Status Kata Sandi']
+      ];
+
+      // 6. Sheet Admin
       const adminRows: (string | number)[][] = [
         ['No', 'Nama Administrator', 'Jenis Kelamin', 'Username Login (Email / Alias)', 'Kata Sandi Default', 'Email Akun', 'No. Telepon / WA', 'Hak Akses']
       ];
 
       let numAll = 1;
-      let numStudent = 1;
-      let numBk = 1;
-      let numWali = 1;
       let numAdmin = 1;
 
       users.forEach(u => {
@@ -321,6 +407,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
         const effectiveGender: Gender = u.gender || studentInfo?.gender || teacherInfo?.gender || detectGenderFromName(u.name);
         const genderLabel = effectiveGender === 'P' ? 'Perempuan (P)' : 'Laki-laki (L)';
+        const genderCode = effectiveGender;
 
         let roleLabel = 'Pengguna';
         let username = u.email;
@@ -352,15 +439,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           password = defPw;
           className = classInfo ? classInfo.name : '-';
           studentRows.push([
-            numStudent++,
             u.name,
-            genderLabel,
+            genderCode,
             nis,
             className,
-            nis,
-            defPw,
             u.email,
-            u.phone || '-',
+            u.phone || studentInfo?.phone || '-',
+            defPw,
             passwordStatus
           ]);
         } else if (teacherInfo?.teacher_type === 'guru_bk') {
@@ -370,16 +455,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           password = 'guru123';
           className = 'Semua Kelas (BK Sekolah)';
           bkRows.push([
-            numBk++,
             u.name,
-            genderLabel,
+            genderCode,
+            u.email,
             teacherInfo.nip,
-            u.email,
-            'guru123',
-            u.email,
-            teacherInfo.specialization || '-',
-            teacherInfo.room || '-',
-            u.phone || '-'
+            u.phone || teacherInfo.phone || '-',
+            teacherInfo.specialization || 'Konseling Pribadi & Sosial',
+            teacherInfo.room || 'Ruang BK',
+            'guru123'
           ]);
         } else if (teacherInfo?.teacher_type === 'wali_kelas') {
           roleLabel = 'Wali Kelas';
@@ -388,16 +471,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           password = 'guru123';
           className = managedClass ? managedClass.name : '-';
           waliRows.push([
-            numWali++,
             u.name,
-            genderLabel,
+            genderCode,
+            u.email,
             teacherInfo.nip,
-            u.email,
-            'guru123',
-            u.email,
+            u.phone || teacherInfo.phone || '-',
             className,
-            teacherInfo.room || '-',
-            u.phone || '-'
+            teacherInfo.room || 'Ruang Guru',
+            'guru123'
           ]);
         }
 
@@ -416,47 +497,39 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         ]);
       });
 
-      const wsAll = XLSX.utils.aoa_to_sheet(allRows);
       const wsStudent = XLSX.utils.aoa_to_sheet(studentRows);
       const wsBk = XLSX.utils.aoa_to_sheet(bkRows);
       const wsWali = XLSX.utils.aoa_to_sheet(waliRows);
+      const wsAll = XLSX.utils.aoa_to_sheet(allRows);
       const wsAdmin = XLSX.utils.aoa_to_sheet(adminRows);
 
-      wsAll['!cols'] = [
-        { wch: 5 },  // No
-        { wch: 16 }, // Kategori
-        { wch: 30 }, // Nama
-        { wch: 26 }, // Username
-        { wch: 18 }, // Password
-        { wch: 32 }, // Email
-        { wch: 22 }, // NIS / NIP
-        { wch: 18 }, // Kelas
-        { wch: 18 }, // Telepon
-        { wch: 18 }  // Status
-      ];
       wsStudent['!cols'] = [
-        { wch: 5 }, { wch: 30 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 18 }, { wch: 32 }, { wch: 18 }, { wch: 16 }
+        { wch: 30 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 32 }, { wch: 18 }, { wch: 20 }, { wch: 18 }
       ];
       wsBk['!cols'] = [
-        { wch: 5 }, { wch: 32 }, { wch: 22 }, { wch: 26 }, { wch: 18 }, { wch: 28 }, { wch: 35 }, { wch: 25 }, { wch: 18 }
+        { wch: 32 }, { wch: 20 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 35 }, { wch: 22 }, { wch: 18 }
       ];
       wsWali['!cols'] = [
-        { wch: 5 }, { wch: 32 }, { wch: 22 }, { wch: 26 }, { wch: 18 }, { wch: 28 }, { wch: 18 }, { wch: 25 }, { wch: 18 }
+        { wch: 32 }, { wch: 20 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 18 }
+      ];
+      wsAll['!cols'] = [
+        { wch: 5 }, { wch: 16 }, { wch: 30 }, { wch: 18 }, { wch: 26 }, { wch: 18 }, { wch: 32 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 18 }
       ];
       wsAdmin['!cols'] = [
-        { wch: 5 }, { wch: 28 }, { wch: 26 }, { wch: 18 }, { wch: 26 }, { wch: 18 }, { wch: 20 }
+        { wch: 5 }, { wch: 28 }, { wch: 20 }, { wch: 26 }, { wch: 18 }, { wch: 26 }, { wch: 18 }, { wch: 20 }
       ];
 
-      XLSX.utils.book_append_sheet(wb, wsAll, `Semua Pengguna (${users.length})`);
-      XLSX.utils.book_append_sheet(wb, wsStudent, `Siswa (${students.length})`);
-      XLSX.utils.book_append_sheet(wb, wsBk, `Guru BK (${teachers.filter(t => t.teacher_type === 'guru_bk').length})`);
-      XLSX.utils.book_append_sheet(wb, wsWali, `Wali Kelas (${teachers.filter(t => t.teacher_type === 'wali_kelas').length})`);
-      XLSX.utils.book_append_sheet(wb, wsAdmin, `Admin (${users.filter(u => u.role === 'admin').length})`);
+      XLSX.utils.book_append_sheet(wb, wsClass, 'Data Kelas');
+      XLSX.utils.book_append_sheet(wb, wsStudent, 'Siswa');
+      XLSX.utils.book_append_sheet(wb, wsBk, 'Guru BK');
+      XLSX.utils.book_append_sheet(wb, wsWali, 'Wali Kelas');
+      XLSX.utils.book_append_sheet(wb, wsAll, 'Semua Kredensial Pengguna');
+      XLSX.utils.book_append_sheet(wb, wsAdmin, 'Administrator');
 
       const now = new Date();
       const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-      XLSX.writeFile(wb, `Data_Pengguna_SAPA_Lengkap_${dateStr}.xlsx`);
-      showFeedback(`Berhasil mengekspor ${users.length} akun pengguna lengkap dengan username dan kata sandi ke Excel.`);
+      XLSX.writeFile(wb, `Data_Pengguna_dan_Kelas_SAPA_${dateStr}.xlsx`);
+      showFeedback(`Berhasil mengekspor ${classes.length} kelas dan ${users.length} akun pengguna ke format Excel yang kompatibel diinput ulang.`);
     } catch (err: any) {
       console.error('Gagal mengekspor data pengguna:', err);
       showFeedback('Gagal mengekspor data ke Excel: ' + (err?.message || 'Terjadi kesalahan'));
@@ -467,7 +540,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   const resolveClassId = (className: string): string => {
     if (!className) return classes[0]?.id || 'cls-1';
     const trimmed = className.trim().toLowerCase();
-    const existing = classes.find(c => c.name.toLowerCase() === trimmed || c.id.toLowerCase() === trimmed);
+    const allCls = db.getClasses();
+    const existing = allCls.find(c => c.name.toLowerCase() === trimmed || c.id.toLowerCase() === trimmed);
     if (existing) return existing.id;
 
     // Auto-create class if not found
@@ -475,7 +549,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       name: className.trim(),
       grade: className.includes('XI') ? '11' : className.includes('XII') ? '12' : '10',
       major: className.toUpperCase().includes('PPLG') || className.toUpperCase().includes('RPL') ? 'PPLG' : className.toUpperCase().includes('TKJ') ? 'TKJ' : 'Umum',
-      homeroom_teacher_id: ''
+      homeroom_teacher_id: null
     });
     return newCls.id;
   };
@@ -494,6 +568,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         let siswaAdded = 0;
         let bkAdded = 0;
         let waliAdded = 0;
+        let kelasAdded = 0;
 
         const normRow = (raw: Record<string, any>): Record<string, string> => {
           const clean: Record<string, string> = {};
@@ -504,76 +579,90 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           return clean;
         };
 
+        // Group sheets to ensure proper order of execution:
+        // 1. Teachers (Wali Kelas & Guru BK)
+        // 2. Classes (Data Kelas)
+        // 3. Students (Siswa)
+        // 4. Fallback (Single combined / exported sheet)
+        const sheetMap: {
+          teachers: string[];
+          classes: string[];
+          students: string[];
+          fallback: string[];
+        } = {
+          teachers: [],
+          classes: [],
+          students: [],
+          fallback: []
+        };
+
         workbook.SheetNames.forEach((sheetName) => {
+          const lower = sheetName.trim().toLowerCase();
+          if (lower.includes('petunjuk') || lower.includes('panduan') || lower.includes('guide')) {
+            return;
+          }
+          if (lower.includes('bk') || lower.includes('konseling') || lower.includes('wali')) {
+            sheetMap.teachers.push(sheetName);
+          } else if ((lower.includes('kelas') || lower.includes('rombel')) && !lower.includes('wali')) {
+            sheetMap.classes.push(sheetName);
+          } else if (lower.includes('siswa') || lower.includes('student')) {
+            sheetMap.students.push(sheetName);
+          } else if (lower.includes('semua') || lower.includes('pengguna') || lower.includes('user') || lower.includes('kredensial')) {
+            sheetMap.fallback.push(sheetName);
+          } else {
+            sheetMap.fallback.push(sheetName);
+          }
+        });
+
+        // Step 1: Process Teachers (Guru BK & Wali Kelas)
+        sheetMap.teachers.forEach((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
           const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
           const lowerSheet = sheetName.trim().toLowerCase();
 
-          // Skip guidance sheet
-          if (lowerSheet.includes('petunjuk') || lowerSheet.includes('panduan') || lowerSheet.includes('guide')) {
-            return;
-          }
-
           rawRows.forEach((raw) => {
             const r = normRow(raw);
-            const name = r['nama'] || r['name'] || r['namasiswa'] || r['namaguru'] || '';
+            const name = r['nama'] || r['name'] || r['namaguru'] || r['namalengkap'] || r['namalengkapgelar'] || '';
             if (!name) return;
 
-            const email = r['email'] || r['surel'] || '';
-            const nis = r['nis'] || r['noinduk'] || r['nisn'] || '';
+            const email = r['email'] || r['surel'] || r['emailresmi'] || '';
             const nip = r['nip'] || r['nopegawai'] || '';
-            const phone = r['nohp'] || r['hp'] || r['phone'] || r['telepon'] || r['wa'] || '';
-            const className = r['kelas'] || r['kelasbinaan'] || r['rombel'] || r['class'] || '';
-            const specialization = r['spesialisasi'] || r['bidang'] || r['keahlian'] || 'Konseling Pribadi, Sosial & Bullying';
+            const phone = r['nohp'] || r['hp'] || r['phone'] || r['telepon'] || r['wa'] || r['noteleponwa'] || '';
+            const className = r['kelasbinaan'] || r['kelas'] || r['rombel'] || '';
+            const specialization = r['spesialisasi'] || r['bidang'] || r['keahlian'] || r['spesialisasikonseling'] || 'Konseling Pribadi, Sosial & Bullying';
             const room = r['ruangan'] || r['ruang'] || r['lokasi'] || 'Ruang BK';
 
             const rawGender = r['jeniskelamin'] || r['gender'] || r['jk'] || r['sex'] || r['jeniskelaminlp'] || '';
             let gender: Gender = 'L';
             if (rawGender) {
               const g = rawGender.trim().toUpperCase();
-              if (g.startsWith('P') || g === 'WANITA' || g === 'PEREMPUAN') {
-                gender = 'P';
-              } else {
-                gender = 'L';
-              }
+              gender = (g.startsWith('P') || g === 'WANITA' || g === 'PEREMPUAN') ? 'P' : 'L';
             } else {
               gender = detectGenderFromName(name);
             }
 
-            // Check if student
-            if (lowerSheet.includes('siswa') || (nis && !nip)) {
-              const finalNis = nis || `2425${Math.floor(1000 + Math.random() * 9000)}`;
-              const finalEmail = email || `${finalNis}@siswa.belajar.id`;
-              const classId = resolveClassId(className);
+            const isBk = lowerSheet.includes('bk') || lowerSheet.includes('konseling') || specialization.toLowerCase().includes('konseling');
+            const finalNip = nip || (isBk ? `1980${Math.floor(10000000 + Math.random() * 90000000)}` : `1985${Math.floor(10000000 + Math.random() * 90000000)}`);
+            const finalEmail = email || (isBk ? `gurubk_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id` : `walikelas_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`);
 
-              // Duplicate check by NIS or Email
-              const existingUser = users.find(u => u.email.toLowerCase() === finalEmail.toLowerCase());
-              const existingStudent = students.find(s => s.nis === finalNis);
+            const existingTeacher = db.getTeachers().find(t => {
+              const plainNip = decryptNip(t.nip).toLowerCase();
+              return t.nip === finalNip || plainNip === finalNip.toLowerCase();
+            });
 
-              if (existingStudent || existingUser) {
-                // Update student class and gender if different
-                const studentToUpdate = existingStudent || students.find(s => s.user_id === existingUser?.id);
-                if (studentToUpdate) {
-                  db.updateStudent(studentToUpdate.id, { class_id: classId, gender });
-                }
-              } else {
-                db.addStudent({
-                  name,
-                  email: finalEmail,
-                  nis: finalNis,
-                  class_id: classId,
-                  gender
+            if (isBk) {
+              if (existingTeacher) {
+                db.updateTeacher(existingTeacher.id, {
+                  gender,
+                  specialization: specialization || existingTeacher.specialization,
+                  room: room || existingTeacher.room
                 });
-                siswaAdded++;
-              }
-            }
-            // Check if Guru BK
-            else if (lowerSheet.includes('bk') || lowerSheet.includes('konseling') || specialization.toLowerCase().includes('konseling')) {
-              const finalNip = nip || `1980${Math.floor(10000000 + Math.random() * 90000000)}`;
-              const finalEmail = email || `gurubk_${Math.floor(Math.random() * 1000)}@guru.belajar.id`;
-
-              const existingTeacher = teachers.find(t => t.nip === finalNip);
-              if (!existingTeacher) {
+                db.updateUser(existingTeacher.user_id, {
+                  name,
+                  gender,
+                  phone: phone || undefined
+                });
+              } else {
                 db.addTeacher({
                   name,
                   email: finalEmail,
@@ -588,16 +677,23 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 });
                 bkAdded++;
               }
-            }
-            // Check if Wali Kelas
-            else if (lowerSheet.includes('wali') || r['kelasbinaan']) {
-              const finalNip = nip || `1985${Math.floor(10000000 + Math.random() * 90000000)}`;
-              const finalEmail = email || `walikelas_${Math.floor(Math.random() * 1000)}@guru.belajar.id`;
-              const classId = resolveClassId(className);
-
-              const existingTeacher = teachers.find(t => t.nip === finalNip);
-              if (!existingTeacher) {
-                db.addTeacher({
+            } else {
+              // Wali Kelas
+              const classId = className ? resolveClassId(className) : '';
+              if (existingTeacher) {
+                db.updateTeacher(existingTeacher.id, {
+                  gender
+                });
+                db.updateUser(existingTeacher.user_id, {
+                  name,
+                  gender,
+                  phone: phone || undefined
+                });
+                if (classId) {
+                  db.updateClass(classId, { homeroom_teacher_id: existingTeacher.id });
+                }
+              } else {
+                const newT = db.addTeacher({
                   name,
                   email: finalEmail,
                   nip: finalNip,
@@ -605,16 +701,195 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   phone,
                   teacher_type: 'wali_kelas',
                   specialization: `Wali Kelas ${className || ''}`,
-                  room: 'Ruang Guru Utama',
+                  room: room || 'Ruang Guru Utama',
                   managed_class_id: classId,
                   bio: 'Wali kelas pendamping perkembangan akademik dan perilaku siswa.',
                   available_hours: 'Senin - Jumat 07.30 - 15.00 WIB'
                 });
+                if (classId && newT?.teacher) {
+                  db.updateClass(classId, { homeroom_teacher_id: newT.teacher.id });
+                }
                 waliAdded++;
               }
             }
           });
         });
+
+        // Step 2: Process Classes (Data Kelas)
+        sheetMap.classes.forEach((sheetName) => {
+          const worksheet = workbook.Sheets[sheetName];
+          const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+          rawRows.forEach((raw) => {
+            const r = normRow(raw);
+            const className = r['namakelas'] || r['kelas'] || r['rombel'] || '';
+            if (!className) return;
+
+            const grade = r['tingkat'] || r['jenjang'] || (className.includes('XI') ? '11' : className.includes('XII') ? '12' : '10');
+            const major = r['jurusan'] || r['kompetensikeahlian'] || 'Umum';
+            const waliVal = r['walikelas'] || r['walikelasnamanip'] || r['nipwalikelas'] || '';
+            const bkVal = r['gurubk'] || r['gurubknamanip'] || r['nipgurubk'] || '';
+
+            const matchedWali = findTeacherMatch(waliVal, 'wali_kelas');
+            const matchedBk = findTeacherMatch(bkVal, 'guru_bk');
+
+            const allCls = db.getClasses();
+            const existingCls = allCls.find(c => c.name.toLowerCase() === className.toLowerCase().trim());
+
+            if (existingCls) {
+              db.updateClass(existingCls.id, {
+                grade,
+                major,
+                homeroom_teacher_id: matchedWali ? matchedWali.id : existingCls.homeroom_teacher_id,
+                bk_teacher_id: matchedBk ? matchedBk.id : existingCls.bk_teacher_id
+              });
+            } else {
+              db.addClass({
+                name: className.trim(),
+                grade,
+                major,
+                homeroom_teacher_id: matchedWali ? matchedWali.id : null,
+                bk_teacher_id: matchedBk ? matchedBk.id : undefined
+              });
+              kelasAdded++;
+            }
+          });
+        });
+
+        // Step 3: Process Students (Siswa)
+        sheetMap.students.forEach((sheetName) => {
+          const worksheet = workbook.Sheets[sheetName];
+          const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+          rawRows.forEach((raw) => {
+            const r = normRow(raw);
+            const name = r['nama'] || r['name'] || r['namasiswa'] || r['namalengkapsiswa'] || '';
+            if (!name) return;
+
+            const email = r['email'] || r['surel'] || r['emailsiswa'] || '';
+            const nis = r['nis'] || r['noinduk'] || r['nisn'] || r['usernameloginnis'] || '';
+            const phone = r['nohp'] || r['hp'] || r['phone'] || r['telepon'] || r['wa'] || r['noteleponwa'] || '';
+            const className = r['kelas'] || r['rombel'] || r['class'] || '';
+
+            const rawGender = r['jeniskelamin'] || r['gender'] || r['jk'] || r['sex'] || r['jeniskelaminlp'] || '';
+            let gender: Gender = 'L';
+            if (rawGender) {
+              const g = rawGender.trim().toUpperCase();
+              gender = (g.startsWith('P') || g === 'WANITA' || g === 'PEREMPUAN') ? 'P' : 'L';
+            } else {
+              gender = detectGenderFromName(name);
+            }
+
+            const finalNis = nis || `2425${Math.floor(1000 + Math.random() * 9000)}`;
+            const finalEmail = email || `${finalNis}@siswa.belajar.id`;
+            const classId = resolveClassId(className);
+
+            const allStudents = db.getStudents();
+            const allUsers = db.getUsers();
+            const existingUser = allUsers.find(u => u.email.toLowerCase() === finalEmail.toLowerCase());
+            const existingStudent = allStudents.find(s => s.nis === finalNis);
+
+            if (existingStudent || existingUser) {
+              const studentToUpdate = existingStudent || allStudents.find(s => s.user_id === existingUser?.id);
+              if (studentToUpdate) {
+                db.updateStudent(studentToUpdate.id, { class_id: classId, gender });
+                if (phone) {
+                  db.updateUser(studentToUpdate.user_id, { phone });
+                }
+              }
+            } else {
+              db.addStudent({
+                name,
+                email: finalEmail,
+                nis: finalNis,
+                class_id: classId,
+                gender,
+                phone
+              });
+              siswaAdded++;
+            }
+          });
+        });
+
+        // Step 4: Fallback for single combined sheet or general export sheet
+        if (siswaAdded === 0 && bkAdded === 0 && waliAdded === 0 && sheetMap.fallback.length > 0) {
+          sheetMap.fallback.forEach((sheetName) => {
+            const worksheet = workbook.Sheets[sheetName];
+            const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+            rawRows.forEach((raw) => {
+              const r = normRow(raw);
+              const name = r['nama'] || r['namalengkap'] || r['name'] || '';
+              if (!name) return;
+
+              const role = (r['kategoriakun'] || r['role'] || r['kategori'] || '').toLowerCase();
+              const email = r['email'] || r['surel'] || '';
+              const nisNip = r['nisnip'] || r['nis'] || r['nip'] || '';
+              const className = r['kelas'] || r['kelasrombel'] || r['rombel'] || '';
+              const phone = r['noteleponwa'] || r['nohp'] || r['telepon'] || '';
+
+              const rawGender = r['jeniskelamin'] || r['gender'] || '';
+              const gender: Gender = (rawGender.toUpperCase().startsWith('P') || rawGender.toUpperCase().includes('PEREMPUAN')) ? 'P' : 'L';
+
+              if (role.includes('siswa') || (!role.includes('guru') && !role.includes('admin') && nisNip.length <= 10)) {
+                const finalNis = nisNip || `2425${Math.floor(1000 + Math.random() * 9000)}`;
+                const finalEmail = email || `${finalNis}@siswa.belajar.id`;
+                const classId = resolveClassId(className);
+
+                const existingStudent = db.getStudents().find(s => s.nis === finalNis);
+                if (!existingStudent) {
+                  db.addStudent({
+                    name,
+                    email: finalEmail,
+                    nis: finalNis,
+                    class_id: classId,
+                    gender,
+                    phone
+                  });
+                  siswaAdded++;
+                }
+              } else if (role.includes('bk')) {
+                const finalNip = nisNip || `1980${Math.floor(10000000 + Math.random() * 90000000)}`;
+                const existingTeacher = db.getTeachers().find(t => t.nip === finalNip);
+                if (!existingTeacher) {
+                  db.addTeacher({
+                    name,
+                    email: email || `gurubk_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`,
+                    nip: finalNip,
+                    gender,
+                    phone,
+                    teacher_type: 'guru_bk',
+                    specialization: 'Konseling Bimbingan',
+                    room: 'Ruang BK',
+                    bio: 'Guru BK Sekolah',
+                    available_hours: 'Senin - Jumat'
+                  });
+                  bkAdded++;
+                }
+              } else if (role.includes('wali')) {
+                const finalNip = nisNip || `1985${Math.floor(10000000 + Math.random() * 90000000)}`;
+                const classId = className ? resolveClassId(className) : '';
+                const existingTeacher = db.getTeachers().find(t => t.nip === finalNip);
+                if (!existingTeacher) {
+                  db.addTeacher({
+                    name,
+                    email: email || `walikelas_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`,
+                    nip: finalNip,
+                    gender,
+                    phone,
+                    teacher_type: 'wali_kelas',
+                    specialization: `Wali Kelas ${className}`,
+                    room: 'Ruang Guru',
+                    managed_class_id: classId,
+                    bio: 'Wali Kelas Pendamping',
+                    available_hours: 'Senin - Jumat'
+                  });
+                  waliAdded++;
+                }
+              }
+            });
+          });
+        }
 
         onRefresh();
         setImportSummary({
@@ -622,7 +897,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           siswaCount: siswaAdded,
           bkCount: bkAdded,
           waliCount: waliAdded,
-          message: `Berhasil memproses berkas Excel. Ditambahkan ${siswaAdded} Siswa, ${bkAdded} Guru BK, dan ${waliAdded} Wali Kelas.`
+          kelasCount: kelasAdded,
+          message: `Berhasil memproses berkas Excel. Data yang berhasil disinkronkan: ${kelasAdded} Kelas, ${siswaAdded} Siswa, ${bkAdded} Guru BK, dan ${waliAdded} Wali Kelas.`
         });
 
         if (fileInputRef.current) {
@@ -813,17 +1089,40 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
     return true;
   }).filter((u) => {
+    if (classFilter !== 'all') {
+      const student = students.find(s => s.user_id === u.id);
+      const teacher = teachers.find(t => t.user_id === u.id);
+      const targetClass = classes.find(c => c.id === classFilter);
+
+      if (u.role === 'siswa') {
+        if (!student) return false;
+        return student.class_id === classFilter || (targetClass && student.class_name?.toLowerCase() === targetClass.name.toLowerCase());
+      }
+      if (u.role === 'guru') {
+        if (!teacher) return false;
+        const isHomeroom = teacher.managed_class_id === classFilter ||
+          (targetClass && (targetClass.homeroom_teacher_id === teacher.id || targetClass.homeroom_teacher_id === teacher.user_id));
+        const isCounselor = (teacher.assigned_class_ids && teacher.assigned_class_ids.includes(classFilter)) ||
+          (targetClass && (targetClass.bk_teacher_id === teacher.id || targetClass.bk_teacher_id === teacher.user_id));
+        return Boolean(isHomeroom || isCounselor);
+      }
+      return false; // admin doesn't belong to a class
+    }
+    return true;
+  }).filter((u) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     const student = students.find(s => s.user_id === u.id);
     const teacher = teachers.find(t => t.user_id === u.id);
     const plainNip = teacher ? decryptNip(teacher.nip).toLowerCase() : '';
+    const studentClass = student ? classes.find(c => c.id === student.class_id)?.name.toLowerCase() : '';
     return (
       u.name.toLowerCase().includes(q) ||
       u.email.toLowerCase().includes(q) ||
       (student && student.nis.toLowerCase().includes(q)) ||
       (teacher && teacher.nip.toLowerCase().includes(q)) ||
       plainNip.includes(q) ||
+      (studentClass && studentClass.includes(q)) ||
       (teacher && teacher.specialization?.toLowerCase().includes(q))
     );
   });
@@ -1203,8 +1502,32 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           </button>
         </div>
 
-        {/* Search Input & Sort Selector */}
+        {/* Search Input, Class Filter & Sort Selector */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          {/* Class Filter Dropdown */}
+          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200">
+            <GraduationCap className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">Kelas:</span>
+            <select
+              value={classFilter}
+              onChange={(e) => {
+                setClassFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer max-w-[140px] truncate"
+            >
+              <option value="all">Semua Kelas ({classes.length})</option>
+              {classes.map((cls) => {
+                const count = students.filter(s => s.class_id === cls.id).length;
+                return (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.name} ({count} siswa)
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
           {/* Sort By Dropdown */}
           <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200">
             <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
@@ -1237,6 +1560,41 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Active Class Filter Info Banner */}
+      {classFilter !== 'all' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 px-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs animate-in fade-in duration-150">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>
+              Menampilkan pengguna terkait kelas <strong>{classes.find(c => c.id === classFilter)?.name}</strong>
+              {(() => {
+                const targetCls = classes.find(c => c.id === classFilter);
+                const wali = teachers.find(t => t.id === targetCls?.homeroom_teacher_id || t.user_id === targetCls?.homeroom_teacher_id);
+                const bk = teachers.find(t => t.id === targetCls?.bk_teacher_id || t.user_id === targetCls?.bk_teacher_id || t.assigned_class_ids?.includes(targetCls?.id || ''));
+                const studentCount = students.filter(s => s.class_id === classFilter).length;
+                return (
+                  <span>
+                    {' '}({studentCount} Siswa
+                    {wali ? ` • Wali: ${wali.name}` : ''}
+                    {bk ? ` • BK: ${bk.name}` : ''})
+                  </span>
+                );
+              })()}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setClassFilter('all');
+              setCurrentPage(1);
+            }}
+            className="text-blue-700 hover:text-blue-900 font-bold text-xs underline cursor-pointer"
+          >
+            Reset Filter Kelas
+          </button>
+        </div>
+      )}
 
       {/* Bulk Selection Action Bar */}
       {selectedUserIds.length > 0 && (
@@ -2172,18 +2530,22 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5 py-2">
-              <div className="p-3 rounded-2xl bg-blue-50 border border-blue-100 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-2">
+              <div className="p-2.5 rounded-2xl bg-indigo-50 border border-indigo-100 text-center">
+                <p className="text-xl font-black text-indigo-700">{importSummary.kelasCount ?? 0}</p>
+                <span className="text-[10px] font-bold text-indigo-900 block mt-0.5">Kelas</span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-blue-50 border border-blue-100 text-center">
                 <p className="text-xl font-black text-blue-700">{importSummary.siswaCount}</p>
-                <span className="text-[11px] font-bold text-blue-900 block mt-0.5">Siswa Baru</span>
+                <span className="text-[10px] font-bold text-blue-900 block mt-0.5">Siswa</span>
               </div>
-              <div className="p-3 rounded-2xl bg-purple-50 border border-purple-100 text-center">
+              <div className="p-2.5 rounded-2xl bg-purple-50 border border-purple-100 text-center">
                 <p className="text-xl font-black text-purple-700">{importSummary.bkCount}</p>
-                <span className="text-[11px] font-bold text-purple-900 block mt-0.5">Guru BK</span>
+                <span className="text-[10px] font-bold text-purple-900 block mt-0.5">Guru BK</span>
               </div>
-              <div className="p-3 rounded-2xl bg-teal-50 border border-teal-100 text-center">
+              <div className="p-2.5 rounded-2xl bg-teal-50 border border-teal-100 text-center">
                 <p className="text-xl font-black text-teal-700">{importSummary.waliCount}</p>
-                <span className="text-[11px] font-bold text-teal-900 block mt-0.5">Wali Kelas</span>
+                <span className="text-[10px] font-bold text-teal-900 block mt-0.5">Wali Kelas</span>
               </div>
             </div>
 

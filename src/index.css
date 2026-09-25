@@ -13,3 +13,42 @@
   }
 }
 
+@media print {
+  /* Hide all app chrome, headers, navigation, footers, buttons */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Show only the active printable document area */
+  #printable-report-area,
+  #printable-report-area *,
+  #printable-counseling-area,
+  #printable-counseling-area * {
+    visibility: visible;
+  }
+
+  #printable-report-area,
+  #printable-counseling-area {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 10mm 15mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    font-family: 'Times New Roman', Times, serif !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm 15mm 10mm 15mm;
+  }
+}
+

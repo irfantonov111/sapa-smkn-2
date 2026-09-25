@@ -21,7 +21,8 @@ import {
   FileText,
   File as FileGeneric,
   Download,
-  ZoomIn
+  ZoomIn,
+  Printer
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -30,6 +31,7 @@ import { CategoryIcon, StatusBadge, UrgencyBadge, PrivacyBadge } from '../compon
 import { StatusTimeline } from '../components/StatusTimeline';
 import { ReportChat } from '../components/ReportChat';
 import { DeleteReportModal } from '../components/DeleteReportModal';
+import { PrintReportModal } from '../components/PrintReportModal';
 
 interface ReportDetailPageProps {
   reportId: string;
@@ -48,6 +50,9 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({ reportId, on
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Print PDF modal state
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Lightbox preview modal state
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<{ url: string; name: string } | null>(null);
@@ -207,6 +212,17 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({ reportId, on
                 <span>Perbarui / Buka Status Kembali</span>
               </button>
             )}
+
+            {/* Cetak Detail Laporan ke PDF */}
+            <button
+              type="button"
+              onClick={() => setShowPrintModal(true)}
+              title="Cetak berkas detail penanganan aduan siswa ke format PDF resmi"
+              className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Printer className="w-4 h-4 text-indigo-600" />
+              <span>Cetak PDF</span>
+            </button>
 
             {/* Hapus Laporan Button */}
             <button
@@ -633,6 +649,16 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({ reportId, on
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Cetak PDF Laporan */}
+      {report && (
+        <PrintReportModal
+          isOpen={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+          report={report}
+          history={history}
+        />
       )}
     </div>
   );

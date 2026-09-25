@@ -229,6 +229,9 @@ export interface EnrichedReport extends Report {
 export interface SystemSettings {
   reset_password_email: string;
   school_name: string;
+  address?: string;
+  contact_email?: string;
+  contact_phone?: string;
   support_phone?: string;
   updated_at?: string;
 }
