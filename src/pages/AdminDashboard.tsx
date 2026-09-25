@@ -491,9 +491,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <div className="p-3.5 bg-blue-50 rounded-2xl border border-blue-100 space-y-2">
-                <span className="font-bold text-blue-900 block text-sm">4. Jalankan Seed SQL (Dataset 33 Kelas)</span>
+                <span className="font-bold text-blue-900 block text-sm">4. Jalankan Seed SQL (Data Admin)</span>
                 <p className="text-blue-800">
-                  Anda dapat membuka menu <strong>SQL Editor</strong> di Supabase dan menjalankan isi berkas <code className="font-bold">database/seed.sql</code>, atau cukup klik tombol <strong>"Terapkan Master Data ke Supabase"</strong> di panel atas setelah status terhubung berwarna hijau.
+                  Anda dapat membuka menu <strong>SQL Editor</strong> di Supabase dan menjalankan isi berkas <code className="font-bold">database/seed.sql</code> untuk menginisialisasi akun administrator dan kategori dasar.
                 </p>
               </div>
             </div>

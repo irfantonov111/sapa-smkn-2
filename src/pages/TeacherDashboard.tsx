@@ -315,6 +315,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
     }
   };
 
+  // 1. Pada Halaman Guru BK, menu Jadwal Konseling: Tampilkan HANYA halaman konten untuk menu jadwal konseling saja
+  if (activeDashboardTab === 'counseling') {
+    return (
+      <div className="space-y-6">
+        <TeacherCounselingTab
+          onNavigate={onNavigate}
+          onBackToReports={() => setActiveDashboardTab('reports')}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header Banner */}
@@ -504,11 +516,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
         </div>
       )}
 
-      {activeDashboardTab === 'counseling' ? (
-        <TeacherCounselingTab onNavigate={onNavigate} />
-      ) : (
-        <>
-          {/* BK Teacher Active Status Section */}
+      {/* BK Teacher Active Status Section */}
       {isBK && teacherRecord && (
         <div
           className={`rounded-3xl p-5 sm:p-6 border shadow-xs transition-all ${
@@ -1257,8 +1265,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onNavigate, 
           )}
         </div>
       </div>
-        </>
-      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteReportModal

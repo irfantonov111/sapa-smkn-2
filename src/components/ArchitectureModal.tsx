@@ -383,7 +383,7 @@ export const ArchitectureModal: React.FC<ArchitectureModalProps> = ({
                 <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700/60 space-y-1">
                   <div className="font-bold text-blue-300 flex items-center gap-2 text-xs">
                     <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center text-[10px]">2</span>
-                    Jalankan Migrasi & Data Master (100 Siswa, 10 Guru BK, 40 Wali Kelas)
+                    Jalankan Migrasi & Data Master Administrator Sistem
                   </div>
                   <p className="text-[11px] text-slate-400">
                     Buka SQL Query Editor di Supabase/Neon, lalu jalankan file <code className="text-emerald-300 font-mono">database/schema.sql</code> diikuti <code className="text-emerald-300 font-mono">database/seed.sql</code>.

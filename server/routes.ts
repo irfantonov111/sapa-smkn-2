@@ -55,7 +55,9 @@ import {
   acceptCounselingAppointment,
   rescheduleCounselingAppointment,
   completeCounselingAppointment,
-  cancelCounselingAppointment
+  cancelCounselingAppointment,
+  updateCounselingAppointment,
+  deleteCounselingAppointment
 } from './db';
 
 export const apiRouter = Router();
@@ -154,7 +156,7 @@ apiRouter.post('/admin/seed-supabase', async (req: Request, res: Response) => {
     const dbStatus = await getDatabaseStatus();
     res.json({
       success: true,
-      message: 'Berhasil menginisialisasi 33 Rombel Kelas, 43 Guru, dan 1.122 Siswa ke database Supabase!',
+      message: 'Berhasil menginisialisasi database dengan data administrator sistem!',
       database: dbStatus
     });
   } catch (err: any) {
@@ -341,11 +343,11 @@ apiRouter.post('/users/:id/change-password', async (req: Request, res: Response)
 // Create student
 apiRouter.post('/users/student', async (req: Request, res: Response) => {
   try {
-    const { name, email, nis, class_id, password, phone } = req.body;
+    const { name, email, nis, class_id, password, phone, gender } = req.body;
     if (!name || !email || !nis || !class_id) {
       return res.status(400).json({ error: 'Nama, Email, NIS, dan Kelas wajib diisi' });
     }
-    const result = await createStudent({ name, email, nis, class_id, password, phone });
+    const result = await createStudent({ name, email, nis, class_id, password, phone, gender });
     res.status(201).json({ success: true, ...result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -355,12 +357,12 @@ apiRouter.post('/users/student', async (req: Request, res: Response) => {
 // Create teacher
 apiRouter.post('/users/teacher', async (req: Request, res: Response) => {
   try {
-    const { name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids } = req.body;
+    const { name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids, gender } = req.body;
     if (!name || !email || !nip || !teacher_type) {
       return res.status(400).json({ error: 'Nama, Email, NIP, dan Peran Guru wajib diisi' });
     }
     const result = await createTeacher({
-      name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids
+      name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids, gender
     });
     res.status(201).json({ success: true, ...result });
   } catch (err: any) {
@@ -859,4 +861,28 @@ apiRouter.patch('/counseling/appointments/:id/cancel', async (req: Request, res:
     res.status(500).json({ error: err.message });
   }
 });
+
+apiRouter.put('/counseling/appointments/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updated = await updateCounselingAppointment(id, req.body);
+    if (!updated) {
+      return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
+    }
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.delete('/counseling/appointments/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const success = await deleteCounselingAppointment(id);
+    res.json({ success });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 

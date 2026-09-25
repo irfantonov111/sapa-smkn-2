@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS public.students (
     id VARCHAR(50) PRIMARY KEY,
     user_id VARCHAR(50) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     nis VARCHAR(50) UNIQUE NOT NULL,
+    gender VARCHAR(10) CHECK (gender IN ('L', 'P')),
     class_id VARCHAR(50) REFERENCES public.classes(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -232,6 +233,7 @@ CREATE INDEX IF NOT EXISTS idx_counseling_date ON public.counseling_appointments
 -- ==============================================================================
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
 ALTER TABLE public.teachers ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
 ALTER TABLE public.teachers ALTER COLUMN nip TYPE VARCHAR(255);
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS attachment_url TEXT;
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS attachment_name TEXT;

@@ -34,6 +34,12 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
   const unreadNotifs = db.getUnreadNotificationCount(currentUser.id);
   const unreadAnnouncements = currentUser.role === 'siswa' ? db.getUnreadAnnouncementsCount(currentUser) : 0;
 
+  const teacherRecord = currentUser.role === 'guru' ? db.getTeacherByUserId(currentUser.id) : null;
+  const isBK = teacherRecord?.teacher_type === 'guru_bk';
+  const pendingCounseling = isBK
+    ? db.getCounselingAppointments({ teacher_id: teacherRecord?.id, status: 'menunggu' }).length
+    : 0;
+
   let navItems: { id: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number }[] = [];
 
   if (currentUser.role === 'siswa') {
@@ -45,12 +51,6 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
       { id: 'notifications', label: 'Notifikasi', icon: Bell, badge: unreadNotifs }
     ];
   } else if (currentUser.role === 'guru') {
-    const teacherRecord = db.getTeacherByUserId(currentUser.id);
-    const isBK = teacherRecord?.teacher_type === 'guru_bk';
-    const pendingCounseling = isBK
-      ? db.getCounselingAppointments({ teacher_id: teacherRecord?.id, status: 'menunggu' }).length
-      : 0;
-
     // Menu profil dihilangkan untuk guru karena sudah dapat diakses melalui menu profil pojok kanan atas
     navItems = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -206,16 +206,36 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
               <span className="text-[10px] mt-0.5 tracking-tight">Laporan</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => onNavigate('announcements')}
-              className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
-                currentActive === 'announcements' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Megaphone className="w-5 h-5" />
-              <span className="text-[10px] mt-0.5 tracking-tight">Pengumuman</span>
-            </button>
+            {isBK ? (
+              <button
+                type="button"
+                onClick={() => onNavigate('counseling')}
+                className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
+                  currentActive === 'counseling' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <div className="relative">
+                  <CalendarDays className="w-5 h-5" />
+                  {pendingCounseling > 0 && (
+                    <span className="absolute -top-1 -right-2 px-1 py-0.2 rounded-full text-[9px] font-bold bg-rose-500 text-white animate-pulse">
+                      {pendingCounseling}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] mt-0.5 tracking-tight">Konseling</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onNavigate('announcements')}
+                className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
+                  currentActive === 'announcements' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Megaphone className="w-5 h-5" />
+                <span className="text-[10px] mt-0.5 tracking-tight">Pengumuman</span>
+              </button>
+            )}
 
             <button
               type="button"

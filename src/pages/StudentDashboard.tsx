@@ -80,17 +80,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigate }
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-white shadow-lg relative overflow-hidden">
         <div className="absolute -right-8 -bottom-8 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <span className="text-xs uppercase font-bold tracking-wider text-blue-200">
               Dashboard Siswa • {studentProfile?.class_info?.name || 'SMK'}
             </span>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight mt-1">
               Selamat datang, {currentUser.name} 👋
             </h1>
-            <p className="text-sm text-blue-100/90 mt-1 max-w-xl">
+            <p className="text-xs sm:text-sm text-blue-100/90 mt-1 max-w-xl">
               Jangan ragu untuk menyampaikan hal yang mengganggumu. Guru BK dan Wali Kelas selalu siap mendengarkan dan mendukungmu.
             </p>
           </div>
@@ -98,7 +98,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigate }
           <button
             type="button"
             onClick={() => onNavigate('create')}
-            className="self-start sm:self-auto px-5 py-3 rounded-2xl bg-white text-blue-700 hover:bg-blue-50 font-bold text-sm shadow-md transition flex items-center gap-2 shrink-0 group"
+            className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-white text-blue-700 hover:bg-blue-50 font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 shrink-0 group cursor-pointer"
           >
             <PlusCircle className="w-5 h-5 text-blue-600 group-hover:rotate-90 transition-transform duration-200" />
             <span>Tulis Laporan Baru</span>

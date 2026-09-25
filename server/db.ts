@@ -15,8 +15,10 @@ import {
   ReportPrivacy,
   AssignedTo,
   BkTeacherProfile,
-  CounselingAppointment
+  CounselingAppointment,
+  Gender
 } from '../src/types/database';
+import { getDefaultAvatarByGender } from '../src/utils/avatar2d';
 
 import {
   INITIAL_USERS,
@@ -1695,6 +1697,7 @@ export async function createStudent(data: {
   email: string;
   nis: string;
   class_id: string;
+  gender?: Gender;
   password?: string;
   phone?: string;
 }): Promise<{ user: User; student: Student }> {
@@ -1702,13 +1705,15 @@ export async function createStudent(data: {
   const studentId = `std-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const defaultPass = data.password || `siswa${data.nis.slice(-4)}`;
   const hashedPassword = hashPassword(defaultPass);
+  const detectedGender: Gender = data.gender || (data.name.toLowerCase().match(/\b(siti|nur|dewi|putri|ayu|anisa|rahma|ratih|fitri|anita|wulandari|sari|wahyuni|dian|indah)\b/) ? 'P' : 'L');
 
   const newUser: User = {
     id: userId,
     name: data.name.trim(),
     email: data.email.trim(),
     role: 'siswa',
-    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name.trim())}`,
+    gender: detectedGender,
+    avatar: getDefaultAvatarByGender('siswa', detectedGender),
     phone: data.phone || '',
     password: hashedPassword,
     password_changed: false,
@@ -1719,23 +1724,24 @@ export async function createStudent(data: {
     id: studentId,
     user_id: userId,
     nis: data.nis.trim(),
+    gender: detectedGender,
     class_id: data.class_id,
     created_at: new Date().toISOString()
   };
 
   if (isPostgresConnected && pool) {
     await pool.query(
-      `INSERT INTO users (id, name, email, password, role, avatar, phone, password_changed, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
-       ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, phone = $7`,
-      [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.avatar, newUser.phone, newUser.password_changed]
+      `INSERT INTO users (id, name, email, password, role, gender, avatar, phone, password_changed, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, gender = $6, phone = $8`,
+      [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.gender, newUser.avatar, newUser.phone, newUser.password_changed]
     );
 
     await pool.query(
-      `INSERT INTO students (id, user_id, nis, class_id, created_at)
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-       ON CONFLICT (id) DO UPDATE SET nis = $3, class_id = $4`,
-      [newStudent.id, newStudent.user_id, newStudent.nis, newStudent.class_id]
+      `INSERT INTO students (id, user_id, nis, gender, class_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET nis = $3, gender = $4, class_id = $5`,
+      [newStudent.id, newStudent.user_id, newStudent.nis, newStudent.gender, newStudent.class_id]
     );
   }
 
@@ -1750,6 +1756,7 @@ export async function createTeacher(data: {
   email: string;
   nip: string;
   teacher_type: 'guru_bk' | 'wali_kelas';
+  gender?: Gender;
   phone?: string;
   specialization?: string;
   room?: string;
@@ -1761,13 +1768,15 @@ export async function createTeacher(data: {
   const userId = `usr-t-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const teacherId = `tch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const hashedPassword = hashPassword('guru123');
+  const detectedGender: Gender = data.gender || (data.name.toLowerCase().match(/\b(siti|nur|dewi|putri|ayu|anisa|rahma|ratih|fitri|anita|wulandari|sari|wahyuni|dian|indah|rina|ratna|kartika|sulastri)\b/) ? 'P' : 'L');
 
   const newUser: User = {
     id: userId,
     name: data.name.trim(),
     email: data.email.trim(),
     role: 'guru',
-    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name.trim())}`,
+    gender: detectedGender,
+    avatar: getDefaultAvatarByGender('guru', detectedGender),
     phone: data.phone || '',
     password: hashedPassword,
     password_changed: false,
@@ -1779,6 +1788,7 @@ export async function createTeacher(data: {
     user_id: userId,
     nip: data.nip.trim(),
     teacher_type: data.teacher_type,
+    gender: detectedGender,
     specialization: data.specialization || (data.teacher_type === 'guru_bk' ? 'Konseling Umum' : 'Wali Kelas'),
     room: data.room || (data.teacher_type === 'guru_bk' ? 'Ruang BK' : 'Ruang Guru'),
     bio: data.bio || 'Pendidik siap mendampingi siswa.',
@@ -2467,6 +2477,64 @@ export async function cancelCounselingAppointment(id: string, reason?: string): 
     return apt;
   }
   return null;
+}
+
+export async function updateCounselingAppointment(
+  id: string,
+  data: Partial<CounselingAppointment>
+): Promise<CounselingAppointment | null> {
+  const now = new Date().toISOString();
+  if (isPostgresConnected && pool) {
+    try {
+      const fields: string[] = [];
+      const values: any[] = [];
+      let idx = 1;
+
+      if (data.topic !== undefined) { fields.push(`topic = $${idx++}`); values.push(data.topic.trim()); }
+      if (data.counseling_type !== undefined) { fields.push(`counseling_type = $${idx++}`); values.push(data.counseling_type); }
+      if (data.requested_date !== undefined) { fields.push(`requested_date = $${idx++}`); values.push(data.requested_date); }
+      if (data.requested_time !== undefined) { fields.push(`requested_time = $${idx++}`); values.push(data.requested_time); }
+      if (data.confirmed_date !== undefined) { fields.push(`confirmed_date = $${idx++}`); values.push(data.confirmed_date || null); }
+      if (data.confirmed_time !== undefined) { fields.push(`confirmed_time = $${idx++}`); values.push(data.confirmed_time || null); }
+      if (data.status !== undefined) { fields.push(`status = $${idx++}`); values.push(data.status); }
+      if (data.reschedule_reason !== undefined) { fields.push(`reschedule_reason = $${idx++}`); values.push(data.reschedule_reason || null); }
+      if (data.notes !== undefined) { fields.push(`notes = $${idx++}`); values.push(data.notes || null); }
+
+      fields.push(`updated_at = $${idx++}`);
+      values.push(now);
+
+      values.push(id);
+      const res = await pool.query(
+        `UPDATE counseling_appointments SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+        values
+      );
+      if (res.rows[0]) return res.rows[0];
+    } catch (e) {
+      console.warn('Postgres updateCounselingAppointment failed:', e);
+    }
+  }
+
+  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (apt) {
+    Object.assign(apt, data, { updated_at: now });
+    return apt;
+  }
+  return null;
+}
+
+export async function deleteCounselingAppointment(id: string): Promise<boolean> {
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query('DELETE FROM counseling_appointments WHERE id = $1', [id]);
+    } catch (e) {
+      console.warn('Postgres deleteCounselingAppointment failed:', e);
+    }
+  }
+
+  if (memoryStore.counseling_appointments) {
+    memoryStore.counseling_appointments = memoryStore.counseling_appointments.filter(a => a.id !== id);
+  }
+  return true;
 }
 
 

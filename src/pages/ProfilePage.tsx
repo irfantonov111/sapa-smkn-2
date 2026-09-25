@@ -34,7 +34,8 @@ import {
   AVATAR_2D_STUDENT_MALE,
   AVATAR_2D_STUDENT_FEMALE,
   AVATAR_2D_TEACHER_MALE,
-  AVATAR_2D_TEACHER_FEMALE
+  AVATAR_2D_TEACHER_FEMALE,
+  getDefaultAvatarByGender
 } from '../utils/avatar2d';
 
 interface ProfilePageProps {
@@ -137,7 +138,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onNavigate }) => {
           {/* Avatar Display */}
           <div className="relative shrink-0">
             <img
-              src={currentUser.avatar || (isStudent ? AVATAR_2D_STUDENT_MALE : AVATAR_2D_TEACHER_MALE)}
+              src={currentUser.avatar || getDefaultAvatarByGender(currentUser.role, currentGender)}
               alt={currentUser.name}
               className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl object-cover bg-slate-50 ring-4 ring-blue-50 shadow-md transition"
             />

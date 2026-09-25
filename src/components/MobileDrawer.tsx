@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
+import { getDefaultAvatarByGender } from '../utils/avatar2d';
 
 interface MobileDrawerProps {
   isOpen: boolean;
@@ -102,7 +103,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
         <div className="p-4 bg-gradient-to-br from-blue-50/60 via-indigo-50/30 to-slate-50 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <img
-              src={currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+              src={currentUser.avatar || getDefaultAvatarByGender(currentUser.role, currentUser.gender)}
               alt={currentUser.name}
               className="w-11 h-11 rounded-full object-cover ring-2 ring-blue-500/30 shrink-0"
             />

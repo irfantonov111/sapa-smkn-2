@@ -34,10 +34,11 @@ import {
   Square
 } from 'lucide-react';
 import { db } from '../../services/db';
-import { User, Student, Teacher, SchoolClass } from '../../types/database';
+import { User, Student, Teacher, SchoolClass, Gender } from '../../types/database';
 import { useAuth } from '../../context/AuthContext';
 import { generateTemporaryPassword, isPasswordEncrypted } from '../../utils/crypto';
 import { decryptNip, maskNip } from '../../utils/nipCrypto';
+import { getDefaultAvatarByGender, detectGenderFromName } from '../../utils/avatar2d';
 import { TablePagination, PageSizeOption } from '../common/TablePagination';
 import { ResponsiveTableContainer } from '../common/ResponsiveTableContainer';
 import { AdminClassesModal } from './AdminClassesModal';
@@ -75,7 +76,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
   // Modals state
   const [showAddStudent, setShowAddStudent] = useState(false);
-  const [newStudentData, setNewStudentData] = useState({ name: '', email: '', nis: '', class_id: '' });
+  const [newStudentData, setNewStudentData] = useState({ name: '', email: '', nis: '', class_id: '', gender: 'L' as Gender });
 
   const [showAddTeacher, setShowAddTeacher] = useState(false);
   const [newTeacherData, setNewTeacherData] = useState({
@@ -83,6 +84,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     email: '',
     nip: '',
     teacher_type: 'guru_bk' as 'guru_bk' | 'wali_kelas',
+    gender: 'L' as Gender,
     phone: '',
     specialization: '',
     room: '',
@@ -97,6 +99,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   const [editFormData, setEditFormData] = useState({
     name: '',
     email: '',
+    gender: 'L' as Gender,
     phone: '',
     password: '',
     nis: '',
@@ -204,26 +207,26 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
     // Sheet 1: Siswa
     const studentRows = [
-      ['Nama', 'Email', 'NIS', 'Kelas'],
-      ['Dimas Aditya Pratama', 'dimas.aditya@siswa.belajar.id', '24250101', 'X PPLG 1'],
-      ['Anisa Rahmawati', 'anisa.rahma@siswa.belajar.id', '24250102', 'XI TKJ 2'],
-      ['Bagas Alamsyah', 'bagas.alamsyah@siswa.belajar.id', '24250103', 'XII DKV 1']
+      ['Nama', 'Jenis Kelamin (L/P)', 'NIS', 'Kelas', 'Email'],
+      ['Dimas Aditya Pratama', 'L', '24250101', 'X PPLG 1', 'dimas.aditya@siswa.belajar.id'],
+      ['Anisa Rahmawati', 'P', '24250102', 'XI TKJ 2', 'anisa.rahma@siswa.belajar.id'],
+      ['Bagas Alamsyah', 'L', '24250103', 'XII DKV 1', 'bagas.alamsyah@siswa.belajar.id']
     ];
     const wsStudent = XLSX.utils.aoa_to_sheet(studentRows);
 
     // Sheet 2: Guru BK
     const bkRows = [
-      ['Nama', 'Email', 'NIP', 'No HP', 'Spesialisasi', 'Ruangan'],
-      ['Dra. Hj. Ratna Dewi, M.Pd', 'ratna.dewi@guru.belajar.id', '197508121999032001', '081234567891', 'Konseling Pribadi, Sosial & Bullying', 'Ruang BK 1 (Lt. 2)'],
-      ['Bambang Irawan, S.Pd., Kons.', 'bambang.konseling@guru.belajar.id', '198203142006041002', '081234567892', 'Layanan Karir & Konsultasi Belajar', 'Ruang BK 2 (Lt. 2)']
+      ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Spesialisasi', 'Ruangan'],
+      ['Dra. Hj. Ratna Dewi, M.Pd', 'P', 'ratna.dewi@guru.belajar.id', '197508121999032001', '081234567891', 'Konseling Pribadi, Sosial & Bullying', 'Ruang BK 1 (Lt. 2)'],
+      ['Bambang Irawan, S.Pd., Kons.', 'L', 'bambang.konseling@guru.belajar.id', '198203142006041002', '081234567892', 'Layanan Karir & Konsultasi Belajar', 'Ruang BK 2 (Lt. 2)']
     ];
     const wsBK = XLSX.utils.aoa_to_sheet(bkRows);
 
     // Sheet 3: Wali Kelas
     const waliRows = [
-      ['Nama', 'Email', 'NIP', 'No HP', 'Kelas Binaan'],
-      ['Drs. Ahmad Fauzi, M.Kom', 'ahmad.fauzi@guru.belajar.id', '197805122005011003', '081234567893', 'X PPLG 1'],
-      ['Rina Kartika, S.Pd', 'rina.kartika@guru.belajar.id', '198506202009022004', '081234567894', 'XI TKJ 2']
+      ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Kelas Binaan'],
+      ['Drs. Ahmad Fauzi, M.Kom', 'L', 'ahmad.fauzi@guru.belajar.id', '197805122005011003', '081234567893', 'X PPLG 1'],
+      ['Rina Kartika, S.Pd', 'P', 'rina.kartika@guru.belajar.id', '198506202009022004', '081234567894', 'XI TKJ 2']
     ];
     const wsWali = XLSX.utils.aoa_to_sheet(waliRows);
 
@@ -233,14 +236,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       [''],
       ['1. PENGISIAN SHEET SISWA:'],
       ['   - Nama: Nama lengkap peserta didik (Wajib diisi)'],
-      ['   - Email: Alamat email resmi siswa (Opsional; jika kosong akan otomatis digenerate: [NIS]@siswa.belajar.id)'],
+      ['   - Jenis Kelamin (L/P): Isi "L" untuk Laki-laki atau "P" untuk Perempuan (Wajib diisi; menentukan avatar profil default saat login)'],
       ['   - NIS: Nomor Induk Siswa 8 digit unik (Wajib diisi)'],
       ['   - Kelas: Nama rombel kelas (contoh: X PPLG 1, XI TKJ 2, XII DKV 1). Jika kelas belum ada, sistem akan membuat kelas otomatis.'],
+      ['   - Email: Alamat email resmi siswa (Opsional; jika kosong akan otomatis digenerate: [NIS]@siswa.belajar.id)'],
       ['   - Kata sandi bawaan siswa: siswa + 4 digit terakhir NIS (contoh: siswa0101).'],
       ['   - Siswa diberikan batas 1x ganti kata sandi pribadi sesuai preferensi pada sesi login pertama.'],
       [''],
       ['2. PENGISIAN SHEET GURU BK:'],
       ['   - Nama: Nama lengkap dan gelar Guru BK (Wajib diisi)'],
+      ['   - Jenis Kelamin (L/P): Isi "L" untuk Laki-laki atau "P" untuk Perempuan (Wajib diisi; menentukan avatar profil default)'],
       ['   - Email: Email resmi pendidik (Wajib diisi)'],
       ['   - NIP: 18 digit NIP resmi pendidik (Wajib diisi)'],
       ['   - No HP: Nomor telepon atau WhatsApp'],
@@ -250,6 +255,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       [''],
       ['3. PENGISIAN SHEET WALI KELAS:'],
       ['   - Nama: Nama lengkap dan gelar Wali Kelas (Wajib diisi)'],
+      ['   - Jenis Kelamin (L/P): Isi "L" untuk Laki-laki atau "P" untuk Perempuan (Wajib diisi; menentukan avatar profil default)'],
       ['   - Email: Email resmi pendidik (Wajib diisi)'],
       ['   - NIP: 18 digit NIP resmi pendidik (Wajib diisi)'],
       ['   - No HP: Nomor telepon atau WhatsApp'],
@@ -278,27 +284,27 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
       // 1. Sheet Semua Pengguna
       const allRows: (string | number)[][] = [
-        ['No', 'Kategori Akun', 'Nama Lengkap', 'Username / ID Login', 'Kata Sandi (Password)', 'Email', 'NIS / NIP', 'Kelas / Rombel', 'No. Telepon / WA', 'Status Kata Sandi']
+        ['No', 'Kategori Akun', 'Nama Lengkap', 'Jenis Kelamin', 'Username / ID Login', 'Kata Sandi (Password)', 'Email', 'NIS / NIP', 'Kelas / Rombel', 'No. Telepon / WA', 'Status Kata Sandi']
       ];
 
       // 2. Sheet Siswa
       const studentRows: (string | number)[][] = [
-        ['No', 'Nama Lengkap Siswa', 'NIS', 'Kelas', 'Username Login (NIS)', 'Kata Sandi Default', 'Email Siswa', 'No. Telepon / WA', 'Status Akun']
+        ['No', 'Nama Lengkap Siswa', 'Jenis Kelamin', 'NIS', 'Kelas', 'Username Login (NIS)', 'Kata Sandi Default', 'Email Siswa', 'No. Telepon / WA', 'Status Akun']
       ];
 
       // 3. Sheet Guru BK
       const bkRows: (string | number)[][] = [
-        ['No', 'Nama Lengkap & Gelar', 'NIP', 'Username Login (Email / NIP)', 'Kata Sandi Default', 'Email Resmi', 'Spesialisasi Konseling', 'Ruangan', 'No. Telepon / WA']
+        ['No', 'Nama Lengkap & Gelar', 'Jenis Kelamin', 'NIP', 'Username Login (Email / NIP)', 'Kata Sandi Default', 'Email Resmi', 'Spesialisasi Konseling', 'Ruangan', 'No. Telepon / WA']
       ];
 
       // 4. Sheet Wali Kelas
       const waliRows: (string | number)[][] = [
-        ['No', 'Nama Lengkap & Gelar', 'NIP', 'Username Login (Email / NIP)', 'Kata Sandi Default', 'Email Resmi', 'Kelas Binaan', 'Ruangan', 'No. Telepon / WA']
+        ['No', 'Nama Lengkap & Gelar', 'Jenis Kelamin', 'NIP', 'Username Login (Email / NIP)', 'Kata Sandi Default', 'Email Resmi', 'Kelas Binaan', 'Ruangan', 'No. Telepon / WA']
       ];
 
       // 5. Sheet Admin
       const adminRows: (string | number)[][] = [
-        ['No', 'Nama Administrator', 'Username Login (Email / Alias)', 'Kata Sandi Default', 'Email Akun', 'No. Telepon / WA', 'Hak Akses']
+        ['No', 'Nama Administrator', 'Jenis Kelamin', 'Username Login (Email / Alias)', 'Kata Sandi Default', 'Email Akun', 'No. Telepon / WA', 'Hak Akses']
       ];
 
       let numAll = 1;
@@ -312,6 +318,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         const teacherInfo = teachers.find(t => t.user_id === u.id);
         const classInfo = studentInfo ? classes.find(c => c.id === studentInfo.class_id) : undefined;
         const managedClass = teacherInfo ? classes.find(c => c.homeroom_teacher_id === teacherInfo.id || c.homeroom_teacher_id === teacherInfo.user_id) : undefined;
+
+        const effectiveGender: Gender = u.gender || studentInfo?.gender || teacherInfo?.gender || detectGenderFromName(u.name);
+        const genderLabel = effectiveGender === 'P' ? 'Perempuan (P)' : 'Laki-laki (L)';
 
         let roleLabel = 'Pengguna';
         let username = u.email;
@@ -327,6 +336,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           adminRows.push([
             numAdmin++,
             u.name,
+            genderLabel,
             u.email,
             'admin123',
             u.email,
@@ -344,6 +354,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           studentRows.push([
             numStudent++,
             u.name,
+            genderLabel,
             nis,
             className,
             nis,
@@ -361,6 +372,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           bkRows.push([
             numBk++,
             u.name,
+            genderLabel,
             teacherInfo.nip,
             u.email,
             'guru123',
@@ -378,6 +390,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           waliRows.push([
             numWali++,
             u.name,
+            genderLabel,
             teacherInfo.nip,
             u.email,
             'guru123',
@@ -392,6 +405,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           numAll++,
           roleLabel,
           u.name,
+          genderLabel,
           username,
           password,
           u.email,
@@ -513,6 +527,19 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             const specialization = r['spesialisasi'] || r['bidang'] || r['keahlian'] || 'Konseling Pribadi, Sosial & Bullying';
             const room = r['ruangan'] || r['ruang'] || r['lokasi'] || 'Ruang BK';
 
+            const rawGender = r['jeniskelamin'] || r['gender'] || r['jk'] || r['sex'] || r['jeniskelaminlp'] || '';
+            let gender: Gender = 'L';
+            if (rawGender) {
+              const g = rawGender.trim().toUpperCase();
+              if (g.startsWith('P') || g === 'WANITA' || g === 'PEREMPUAN') {
+                gender = 'P';
+              } else {
+                gender = 'L';
+              }
+            } else {
+              gender = detectGenderFromName(name);
+            }
+
             // Check if student
             if (lowerSheet.includes('siswa') || (nis && !nip)) {
               const finalNis = nis || `2425${Math.floor(1000 + Math.random() * 9000)}`;
@@ -524,17 +551,18 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               const existingStudent = students.find(s => s.nis === finalNis);
 
               if (existingStudent || existingUser) {
-                // Update student class if different
+                // Update student class and gender if different
                 const studentToUpdate = existingStudent || students.find(s => s.user_id === existingUser?.id);
                 if (studentToUpdate) {
-                  db.updateStudent(studentToUpdate.id, { class_id: classId });
+                  db.updateStudent(studentToUpdate.id, { class_id: classId, gender });
                 }
               } else {
                 db.addStudent({
                   name,
                   email: finalEmail,
                   nis: finalNis,
-                  class_id: classId
+                  class_id: classId,
+                  gender
                 });
                 siswaAdded++;
               }
@@ -550,6 +578,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   name,
                   email: finalEmail,
                   nip: finalNip,
+                  gender,
                   phone,
                   teacher_type: 'guru_bk',
                   specialization,
@@ -572,6 +601,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   name,
                   email: finalEmail,
                   nip: finalNip,
+                  gender,
                   phone,
                   teacher_type: 'wali_kelas',
                   specialization: `Wali Kelas ${className || ''}`,
@@ -614,7 +644,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     }
     db.addStudent(newStudentData);
     setShowAddStudent(false);
-    setNewStudentData({ name: '', email: '', nis: '', class_id: '' });
+    setNewStudentData({ name: '', email: '', nis: '', class_id: '', gender: 'L' });
     onRefresh();
     showFeedback(`Siswa ${newStudentData.name} berhasil didaftarkan.`);
   };
@@ -634,6 +664,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       email: '',
       nip: '',
       teacher_type: 'guru_bk',
+      gender: 'L',
       phone: '',
       specialization: '',
       room: '',
@@ -657,9 +688,11 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     setEditingUser(u);
     setShowEditPassword(false);
     const teacherNip = teacher ? decryptNip(teacher.nip) : '';
+    const userGender: Gender = u.gender || (student?.gender as Gender) || (teacher?.gender as Gender) || detectGenderFromName(u.name);
     setEditFormData({
       name: u.name,
       email: u.email,
+      gender: userGender,
       phone: u.phone || '',
       password: '', // Kept empty for security: admin cannot see encrypted password directly
       nis: student?.nis || '',
@@ -684,7 +717,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     const userUpdates: Partial<User> = {
       name: editFormData.name.trim(),
       email: editFormData.email.trim(),
-      phone: editFormData.phone.trim()
+      phone: editFormData.phone.trim(),
+      gender: editFormData.gender
     };
     if (editFormData.password.trim()) {
       userUpdates.password = editFormData.password.trim();
@@ -702,6 +736,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           email: editFormData.email,
           nis: editFormData.nis.trim(),
           class_id: editFormData.class_id,
+          gender: editFormData.gender,
           homeroom_teacher_id: editFormData.homeroom_teacher_id || undefined,
           password: editFormData.password.trim() || undefined
         });
@@ -714,6 +749,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       if (teacher) {
         db.updateTeacher(teacher.id, {
           nip: editFormData.nip.trim(),
+          gender: editFormData.gender,
           specialization: editFormData.specialization.trim(),
           room: editFormData.room.trim(),
           bio: editFormData.bio.trim(),
@@ -1330,12 +1366,28 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     <td className="p-3.5">
                       <div className="flex items-center gap-3">
                         <img
-                          src={u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                          src={u.avatar || getDefaultAvatarByGender(u.role, u.gender || student?.gender || teacher?.gender)}
                           alt={u.name}
-                          className="w-8 h-8 rounded-full object-cover border border-slate-200"
+                          className="w-9 h-9 rounded-full object-cover border border-slate-200 bg-slate-100 shrink-0"
                         />
                         <div>
-                          <p className="font-bold text-slate-900">{u.name}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-bold text-slate-900">{u.name}</p>
+                            <span
+                              className={`text-[9px] font-black px-1.5 py-0.5 rounded-sm ${
+                                (u.gender === 'P' || student?.gender === 'P' || teacher?.gender === 'P')
+                                  ? 'bg-pink-100 text-pink-700 border border-pink-200'
+                                  : 'bg-blue-100 text-blue-700 border border-blue-200'
+                              }`}
+                              title={
+                                (u.gender === 'P' || student?.gender === 'P' || teacher?.gender === 'P')
+                                  ? 'Jenis Kelamin: Perempuan (P)'
+                                  : 'Jenis Kelamin: Laki-laki (L)'
+                              }
+                            >
+                              {(u.gender === 'P' || student?.gender === 'P' || teacher?.gender === 'P') ? 'P' : 'L'}
+                            </span>
+                          </div>
                           {student && <span className="text-[11px] text-slate-500 font-mono">NIS: {student.nis}</span>}
                           {teacher && (
                             <span className="text-[11px] text-slate-500 font-mono">
@@ -1522,6 +1574,24 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 </select>
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Jenis Kelamin (Gender) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  value={newStudentData.gender}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, gender: e.target.value as Gender })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none font-semibold text-slate-800"
+                >
+                  <option value="L">Laki-laki (L)</option>
+                  <option value="P">Perempuan (P)</option>
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Avatar profil 2D siswa saat login pertama kali akan otomatis disesuaikan dengan jenis kelamin yang dipilih.
+                </p>
+              </div>
+
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -1619,6 +1689,20 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Jenis Kelamin (Gender) <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={newTeacherData.gender}
+                    onChange={(e) => setNewTeacherData({ ...newTeacherData, gender: e.target.value as Gender })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none font-semibold text-slate-800"
+                  >
+                    <option value="L">Laki-laki (L)</option>
+                    <option value="P">Perempuan (P)</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Nomor WhatsApp / HP</label>
                   <input
                     type="text"
@@ -1628,7 +1712,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"
                   />
                 </div>
+              </div>
 
+              <div>
                 {newTeacherData.teacher_type === 'wali_kelas' && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Kelas Binaan</label>
@@ -1734,7 +1820,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
                   <input
@@ -1744,6 +1830,17 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Jenis Kelamin</label>
+                  <select
+                    value={editFormData.gender}
+                    onChange={(e) => setEditFormData({ ...editFormData, gender: e.target.value as Gender })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none font-semibold text-slate-800"
+                  >
+                    <option value="L">Laki-laki (L)</option>
+                    <option value="P">Perempuan (P)</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">No Telepon / WhatsApp</label>

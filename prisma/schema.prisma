@@ -52,6 +52,7 @@ model Student {
   id         String       @id
   user_id    String       @unique
   nis        String       @unique
+  gender     String?      // 'L' | 'P'
   class_id   String?
   created_at DateTime     @default(now())
 

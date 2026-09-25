@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { User, Student, Teacher, SchoolClass } from '../types/database';
 import { db } from '../services/db';
 import { verifyPassword, hashPassword, isPasswordEncrypted } from '../utils/crypto';
+import { getDefaultAvatarByGender, detectGenderFromName } from '../utils/avatar2d';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -40,6 +41,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setStudentProfile(null);
       setTeacherProfile(null);
       return;
+    }
+
+    // Pastikan jenis kelamin terisi dan avatar default mengikuti data jenis kelamin pada saat login
+    if (!user.gender) {
+      user.gender = detectGenderFromName(user.name);
+      db.updateUser(user.id, { gender: user.gender });
+    }
+    if (!user.avatar || user.avatar.includes('unsplash.com') || user.avatar.includes('pravatar') || user.avatar === '') {
+      user.avatar = getDefaultAvatarByGender(user.role, user.gender);
+      db.updateUser(user.id, { avatar: user.avatar });
     }
 
     if (user.role === 'siswa') {
@@ -177,10 +188,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const data = await res.json();
       if (res.ok && data.user) {
-        // Resolve password_changed status with local client database if updated
+        // Resolve password_changed, gender, and avatar status with local client database
         const localUser = db.getUserById(data.user.id);
-        const resolvedUser = {
+        const resolvedGender = data.user.gender || localUser?.gender || detectGenderFromName(data.user.name);
+        const resolvedAvatar = (!data.user.avatar || data.user.avatar.includes('unsplash.com') || data.user.avatar.includes('pravatar'))
+          ? (localUser?.avatar && !localUser.avatar.includes('unsplash') ? localUser.avatar : getDefaultAvatarByGender(data.user.role, resolvedGender))
+          : data.user.avatar;
+        const resolvedUser: User = {
           ...data.user,
+          gender: resolvedGender,
+          avatar: resolvedAvatar,
           password_changed: localUser && localUser.password_changed !== undefined ? localUser.password_changed : data.user.password_changed
         };
         setCurrentUser(resolvedUser);

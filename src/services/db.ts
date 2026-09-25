@@ -244,6 +244,16 @@ class DatabaseService {
             });
           }
 
+          // Ensure student gender is synced
+          if (Array.isArray(parsed.students)) {
+            parsed.students.forEach((s: Student) => {
+              if (!s.gender) {
+                const u = parsed.users?.find((usr: User) => usr.id === s.user_id);
+                s.gender = u?.gender || detectGenderFromName(u?.name || '');
+              }
+            });
+          }
+
           // Ensure counseling appointments are initialized
           if (!Array.isArray(parsed.counseling_appointments) || parsed.counseling_appointments.length === 0) {
             parsed.counseling_appointments = [...INITIAL_COUNSELING_APPOINTMENTS];
@@ -286,7 +296,13 @@ class DatabaseService {
           password: u.password && !isPasswordEncrypted(u.password) ? hashPassword(u.password) : u.password
         };
       }),
-      students: [...INITIAL_STUDENTS],
+      students: [...INITIAL_STUDENTS].map(s => {
+        const u = INITIAL_USERS.find(usr => usr.id === s.user_id);
+        return {
+          ...s,
+          gender: s.gender || u?.gender || detectGenderFromName(u?.name || '')
+        };
+      }),
       teachers: [...INITIAL_TEACHERS].map(t => {
         const u = INITIAL_USERS.find(usr => usr.id === t.user_id);
         return {
@@ -1965,6 +1981,16 @@ class DatabaseService {
       if (updates.password && updates.password.trim()) {
         updates.password = hashPassword(updates.password.trim());
       }
+      if (updates.gender && updates.gender !== user.gender) {
+        user.gender = updates.gender;
+        if (!updates.avatar) {
+          updates.avatar = getDefaultAvatarByGender(user.role, updates.gender);
+        }
+        const student = this.state.students.find(s => s.user_id === id);
+        if (student) student.gender = updates.gender;
+        const teacher = this.state.teachers.find(t => t.user_id === id);
+        if (teacher) teacher.gender = updates.gender;
+      }
       Object.assign(user, updates);
       this.saveToStorage();
       this.notifyListeners();
@@ -2080,6 +2106,13 @@ class DatabaseService {
     const student = this.state.students.find(s => s.id === studentId);
     if (student) {
       Object.assign(student, updates);
+      if (updates.gender && student.user_id) {
+        const u = this.state.users.find(usr => usr.id === student.user_id);
+        if (u) {
+          u.gender = updates.gender;
+          u.avatar = getDefaultAvatarByGender('siswa', updates.gender);
+        }
+      }
       this.saveToStorage();
       this.notifyListeners();
       if (student.user_id) {
@@ -2095,6 +2128,13 @@ class DatabaseService {
         updates.nip = encryptNip(updates.nip.trim());
       }
       Object.assign(teacher, updates);
+      if (updates.gender && teacher.user_id) {
+        const u = this.state.users.find(usr => usr.id === teacher.user_id);
+        if (u) {
+          u.gender = updates.gender;
+          u.avatar = getDefaultAvatarByGender('guru', updates.gender);
+        }
+      }
       this.saveToStorage();
       this.notifyListeners();
       if (teacher.user_id) {
@@ -2120,6 +2160,7 @@ class DatabaseService {
     email: string;
     nis: string;
     class_id: string;
+    gender?: Gender;
     password?: string;
     homeroom_teacher_id?: string;
   }): void {
@@ -2127,6 +2168,10 @@ class DatabaseService {
     if (user) {
       user.name = data.name.trim();
       user.email = data.email.trim();
+      if (data.gender) {
+        user.gender = data.gender;
+        user.avatar = getDefaultAvatarByGender('siswa', data.gender);
+      }
       if (data.password && data.password.trim()) {
         user.password = hashPassword(data.password.trim());
         user.password_changed = false; // Memberikan kesempatan reset mandiri 1x lagi untuk siswa
@@ -2137,6 +2182,9 @@ class DatabaseService {
     if (student) {
       student.nis = data.nis.trim();
       student.class_id = data.class_id;
+      if (data.gender) {
+        student.gender = data.gender;
+      }
     }
 
     if (data.class_id && data.homeroom_teacher_id !== undefined) {
@@ -2280,15 +2328,18 @@ class DatabaseService {
     return { success: syncRes.success, count: deletedCount, error: syncRes.error };
   }
 
-  public addStudent(data: { name: string; email: string; nis: string; class_id: string }): void {
+  public addStudent(data: { name: string; email: string; nis: string; class_id: string; gender?: Gender }): void {
     const now = new Date().toISOString();
     const defaultPass = `siswa${data.nis.slice(-4)}`;
     const randomSuffix = Math.random().toString(36).substring(2, 9);
+    const gender: Gender = data.gender || detectGenderFromName(data.name);
     const newUser: User = {
       id: `usr-std-${Date.now()}-${randomSuffix}`,
       name: data.name,
       email: data.email,
       role: 'siswa',
+      gender,
+      avatar: getDefaultAvatarByGender('siswa', gender),
       password: hashPassword(defaultPass),
       password_changed: false,
       created_at: now
@@ -2297,6 +2348,7 @@ class DatabaseService {
       id: `std-${Date.now()}-${randomSuffix}`,
       user_id: newUser.id,
       nis: data.nis,
+      gender,
       class_id: data.class_id,
       created_at: now
     };
@@ -2310,6 +2362,7 @@ class DatabaseService {
       name: data.name,
       email: data.email,
       nis: data.nis,
+      gender,
       class_id: data.class_id,
       password: defaultPass
     });
@@ -2320,6 +2373,7 @@ class DatabaseService {
     email: string;
     nip: string;
     teacher_type: 'guru_bk' | 'wali_kelas';
+    gender?: Gender;
     phone?: string;
     specialization?: string;
     room?: string;
@@ -2329,11 +2383,14 @@ class DatabaseService {
   }): { user: User; teacher: Teacher } {
     const now = new Date().toISOString();
     const randomSuffix = Math.random().toString(36).substring(2, 9);
+    const gender: Gender = data.gender || detectGenderFromName(data.name);
     const newUser: User = {
       id: `usr-tch-${Date.now()}-${randomSuffix}`,
       name: data.name.trim(),
       email: data.email.trim(),
       role: 'guru',
+      gender,
+      avatar: getDefaultAvatarByGender('guru', gender),
       password: hashPassword('guru123'),
       password_changed: false, // Memerlukan ganti sandi pada login pertama
       phone: data.phone?.trim() || '',
@@ -2344,6 +2401,7 @@ class DatabaseService {
       user_id: newUser.id,
       nip: encryptNip(data.nip.trim()),
       teacher_type: data.teacher_type,
+      gender,
       specialization: data.specialization?.trim() || (data.teacher_type === 'guru_bk' ? 'Bimbingan Konseling Umum' : 'Wali Kelas'),
       room: data.room?.trim() || (data.teacher_type === 'guru_bk' ? 'Ruang BK' : 'Ruang Guru'),
       bio: data.bio?.trim() || (data.teacher_type === 'guru_bk' ? 'Mendampingi siswa dengan aman, suportif, dan menjaga privasi penuh.' : 'Mendampingi perkembangan akademik dan karakter kelas binaan.'),
@@ -2370,11 +2428,12 @@ class DatabaseService {
       email: data.email.trim(),
       nip: data.nip.trim(),
       teacher_type: data.teacher_type,
-      phone: data.phone?.trim() || '',
-      specialization: data.specialization?.trim(),
-      room: data.room?.trim(),
-      bio: data.bio?.trim(),
-      available_hours: data.available_hours?.trim(),
+      gender,
+      phone: data.phone?.trim(),
+      specialization: newTeacher.specialization,
+      room: newTeacher.room,
+      bio: newTeacher.bio,
+      available_hours: newTeacher.available_hours,
       managed_class_id: data.managed_class_id
     });
 
@@ -3165,6 +3224,116 @@ class DatabaseService {
     this.syncToServer(`/api/counseling/appointments/${appointmentId}/cancel`, 'PATCH', { reason });
 
     return apt;
+  }
+
+  public createCounselingAppointmentByTeacher(
+    teacherUser: User,
+    teacherProfile: Teacher,
+    data: {
+      student_id: string;
+      requested_date: string;
+      requested_time: string;
+      topic: string;
+      counseling_type?: CounselingType;
+      notes?: string;
+      status?: CounselingAppointmentStatus;
+    }
+  ): CounselingAppointment {
+    if (!this.state.counseling_appointments) {
+      this.state.counseling_appointments = [];
+    }
+
+    const student = this.state.students.find(s => s.id === data.student_id);
+    const studentUser = student ? this.getUserById(student.user_id) : null;
+    const studentClass = student?.class_id ? this.getClassById(student.class_id) : null;
+
+    const now = new Date().toISOString();
+    const finalStatus = data.status || 'disetujui';
+    const newAppointment: CounselingAppointment = {
+      id: `apt-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      student_id: student?.id || data.student_id,
+      student_user_id: studentUser?.id || student?.user_id || '',
+      student_name: studentUser?.name || 'Siswa',
+      student_class_name: studentClass?.name || 'Siswa SMK',
+      teacher_id: teacherProfile.id,
+      teacher_user_id: teacherUser.id,
+      teacher_name: teacherUser.name,
+      requested_date: data.requested_date,
+      requested_time: data.requested_time,
+      confirmed_date: finalStatus === 'disetujui' ? data.requested_date : undefined,
+      confirmed_time: finalStatus === 'disetujui' ? data.requested_time : undefined,
+      topic: data.topic,
+      counseling_type: data.counseling_type || 'tatap_muka',
+      status: finalStatus,
+      notes: data.notes,
+      created_at: now,
+      updated_at: now
+    };
+
+    this.state.counseling_appointments.unshift(newAppointment);
+
+    // Send notification to the student
+    if (studentUser) {
+      this.state.notifications.unshift({
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        user_id: studentUser.id,
+        title: 'Jadwal Bimbingan Konseling Dijadwalkan',
+        message: `${teacherUser.name} telah menjadwalkan sesi konseling untukmu pada ${data.requested_date} pukul ${data.requested_time}. Topik: "${data.topic}".`,
+        is_read: false,
+        created_at: now
+      });
+    }
+
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer('/api/counseling/appointments', 'POST', newAppointment);
+
+    return newAppointment;
+  }
+
+  public updateCounselingAppointment(
+    appointmentId: string,
+    updates: Partial<CounselingAppointment>,
+    notifyStudent = false
+  ): CounselingAppointment {
+    if (!this.state.counseling_appointments) {
+      this.state.counseling_appointments = [];
+    }
+    const apt = this.state.counseling_appointments.find(a => a.id === appointmentId);
+    if (!apt) {
+      throw new Error('Jadwal konseling tidak ditemukan');
+    }
+
+    const now = new Date().toISOString();
+    Object.assign(apt, updates, { updated_at: now });
+
+    if (notifyStudent && apt.student_user_id) {
+      this.state.notifications.unshift({
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        user_id: apt.student_user_id,
+        title: 'Pembaruan Jadwal Konseling',
+        message: `Jadwal konseling Anda telah diperbarui oleh Guru BK (${apt.teacher_name}). Periksa detail terbaru pada menu jadwal konseling.`,
+        is_read: false,
+        created_at: now
+      });
+    }
+
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}`, 'PUT', updates);
+
+    return apt;
+  }
+
+  public deleteCounselingAppointment(appointmentId: string): boolean {
+    if (!this.state.counseling_appointments) {
+      return true;
+    }
+    this.state.counseling_appointments = this.state.counseling_appointments.filter(a => a.id !== appointmentId);
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}`, 'DELETE');
+    return true;
   }
 
   public async fetchCounselingAppointments(): Promise<CounselingAppointment[]> {

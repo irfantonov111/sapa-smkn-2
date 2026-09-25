@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
+import { getDefaultAvatarByGender } from '../utils/avatar2d';
 
 interface HeaderProps {
   currentTab?: string;
@@ -208,7 +209,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, activeTab, onNavigat
                   className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-xl hover:bg-slate-100 transition border border-transparent hover:border-slate-200"
                 >
                   <img
-                    src={currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                    src={currentUser.avatar || getDefaultAvatarByGender(currentUser.role, currentUser.gender)}
                     alt={currentUser.name}
                     className="w-8 h-8 rounded-full object-cover ring-2 ring-blue-500/30"
                   />

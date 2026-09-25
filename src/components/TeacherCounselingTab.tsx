@@ -16,7 +16,16 @@ import {
   CalendarClock,
   Inbox,
   Sparkles,
-  Users
+  Users,
+  Plus,
+  Pencil,
+  Trash2,
+  Eye,
+  FileText,
+  User,
+  GraduationCap,
+  ArrowLeft,
+  ChevronLeft
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -26,7 +35,12 @@ import {
   CounselingType
 } from '../types/database';
 
-export const TeacherCounselingTab: React.FC = () => {
+interface TeacherCounselingTabProps {
+  onNavigate?: (tab: string, reportId?: string) => void;
+  onBackToReports?: () => void;
+}
+
+export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNavigate, onBackToReports }) => {
   const { currentUser, teacherProfile } = useAuth();
   const [appointments, setAppointments] = useState<CounselingAppointment[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -36,7 +50,7 @@ export const TeacherCounselingTab: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'terbaru' | 'terlama' | 'jadwal_terdekat'>('terbaru');
 
-  // Modals
+  // Modals - Workflow status
   const [acceptModalApt, setAcceptModalApt] = useState<CounselingAppointment | null>(null);
   const [acceptNotes, setAcceptNotes] = useState('');
 
@@ -47,6 +61,30 @@ export const TeacherCounselingTab: React.FC = () => {
 
   const [completeModalApt, setCompleteModalApt] = useState<CounselingAppointment | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
+
+  // Modals - Full CRUD
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createClassFilter, setCreateClassFilter] = useState('');
+  const [createStudentId, setCreateStudentId] = useState('');
+  const [createDate, setCreateDate] = useState('');
+  const [createTime, setCreateTime] = useState('09:00');
+  const [createType, setCreateType] = useState<CounselingType>('tatap_muka');
+  const [createStatus, setCreateStatus] = useState<CounselingAppointmentStatus>('disetujui');
+  const [createTopic, setCreateTopic] = useState('');
+  const [createNotes, setCreateNotes] = useState('');
+
+  const [editModalApt, setEditModalApt] = useState<CounselingAppointment | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editTime, setEditTime] = useState('09:00');
+  const [editType, setEditType] = useState<CounselingType>('tatap_muka');
+  const [editStatus, setEditStatus] = useState<CounselingAppointmentStatus>('disetujui');
+  const [editTopic, setEditTopic] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editRescheduleReason, setEditRescheduleReason] = useState('');
+  const [editNotifyStudent, setEditNotifyStudent] = useState(true);
+
+  const [deleteModalApt, setDeleteModalApt] = useState<CounselingAppointment | null>(null);
+  const [detailModalApt, setDetailModalApt] = useState<CounselingAppointment | null>(null);
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -230,6 +268,184 @@ export const TeacherCounselingTab: React.FC = () => {
     }
   };
 
+  // Data for Student selection in Create modal
+  const allClasses = useMemo(() => db.getClasses(), [refreshTick]);
+  const allStudents = useMemo(() => db.getStudents(), [refreshTick]);
+  const allUsers = useMemo(() => db.getUsers(), [refreshTick]);
+
+  const studentOptions = useMemo(() => {
+    return allStudents.map(st => {
+      const u = allUsers.find(user => user.id === st.user_id);
+      const cl = allClasses.find(c => c.id === st.class_id);
+      return {
+        id: st.id,
+        user_id: st.user_id,
+        name: u?.name || 'Siswa',
+        nis: st.nis,
+        class_id: st.class_id,
+        class_name: cl?.name || 'Kelas Siswa',
+        avatar: u?.avatar
+      };
+    });
+  }, [allStudents, allUsers, allClasses]);
+
+  const filteredStudentOptions = useMemo(() => {
+    if (!createClassFilter) return studentOptions;
+    return studentOptions.filter(s => s.class_id === createClassFilter);
+  }, [studentOptions, createClassFilter]);
+
+  const getTomorrowDateStr = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  };
+
+  const handleOpenCreate = () => {
+    setCreateClassFilter('');
+    setCreateStudentId(studentOptions[0]?.id || '');
+    setCreateDate(getTomorrowDateStr());
+    setCreateTime('09:00');
+    setCreateType('tatap_muka');
+    setCreateStatus('disetujui');
+    setCreateTopic('');
+    setCreateNotes('');
+    setIsCreateModalOpen(true);
+  };
+
+  const handleConfirmCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const effectiveTeacher = teacherProfile || teacherRecord;
+    if (!currentUser || !effectiveTeacher) {
+      setFeedback({ type: 'error', message: 'Profil Guru BK tidak ditemukan.' });
+      return;
+    }
+    if (!createStudentId) {
+      alert('Mohon pilih siswa yang akan dijadwalkan konseling.');
+      return;
+    }
+    if (!createDate || !createTime) {
+      alert('Mohon pilih tanggal dan jam konseling.');
+      return;
+    }
+    if (!createTopic.trim()) {
+      alert('Mohon isi topik / keperluan bimbingan konseling.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const created = db.createCounselingAppointmentByTeacher(currentUser, effectiveTeacher, {
+        student_id: createStudentId,
+        requested_date: createDate,
+        requested_time: createTime,
+        topic: createTopic.trim(),
+        counseling_type: createType,
+        status: createStatus,
+        notes: createNotes.trim() || undefined
+      });
+      setFeedback({
+        type: 'success',
+        message: `Jadwal konseling berhasil dibuat untuk ${created.student_name}. Notifikasi telah dikirimkan ke siswa.`
+      });
+      setIsCreateModalOpen(false);
+      loadData();
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Gagal membuat jadwal konseling.' });
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
+  const handleOpenDetail = (apt: CounselingAppointment) => {
+    setDetailModalApt(apt);
+  };
+
+  const handleOpenEdit = (apt: CounselingAppointment) => {
+    setEditModalApt(apt);
+    setEditDate(apt.confirmed_date || apt.requested_date);
+    setEditTime(apt.confirmed_time || apt.requested_time);
+    setEditType(apt.counseling_type);
+    setEditStatus(apt.status);
+    setEditTopic(apt.topic);
+    setEditNotes(apt.notes || '');
+    setEditRescheduleReason(apt.reschedule_reason || '');
+    setEditNotifyStudent(true);
+  };
+
+  const handleConfirmEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editModalApt) return;
+    if (!editDate || !editTime) {
+      alert('Tanggal dan jam konseling tidak boleh kosong.');
+      return;
+    }
+    if (!editTopic.trim()) {
+      alert('Topik konseling tidak boleh kosong.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      db.updateCounselingAppointment(
+        editModalApt.id,
+        {
+          requested_date: editDate,
+          requested_time: editTime,
+          confirmed_date: editStatus === 'disetujui' || editStatus === 'dijadwalkan_ulang' ? editDate : editModalApt.confirmed_date,
+          confirmed_time: editStatus === 'disetujui' || editStatus === 'dijadwalkan_ulang' ? editTime : editModalApt.confirmed_time,
+          counseling_type: editType,
+          status: editStatus,
+          topic: editTopic.trim(),
+          notes: editNotes.trim() || undefined,
+          reschedule_reason: editRescheduleReason.trim() || undefined
+        },
+        editNotifyStudent
+      );
+
+      setFeedback({
+        type: 'success',
+        message: `Jadwal konseling ${editModalApt.student_name} berhasil diperbarui.`
+      });
+      setEditModalApt(null);
+      if (detailModalApt && detailModalApt.id === editModalApt.id) {
+        setDetailModalApt(null);
+      }
+      loadData();
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Gagal memperbarui jadwal konseling.' });
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
+  const handleOpenDelete = (apt: CounselingAppointment) => {
+    setDeleteModalApt(apt);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteModalApt) return;
+    setIsProcessing(true);
+    try {
+      db.deleteCounselingAppointment(deleteModalApt.id);
+      setFeedback({
+        type: 'success',
+        message: `Jadwal konseling ${deleteModalApt.student_name} berhasil dihapus.`
+      });
+      setDeleteModalApt(null);
+      if (detailModalApt && detailModalApt.id === deleteModalApt.id) {
+        setDetailModalApt(null);
+      }
+      loadData();
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Gagal menghapus jadwal konseling.' });
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
   const getStatusBadge = (status: CounselingAppointmentStatus) => {
     switch (status) {
       case 'menunggu':
@@ -274,6 +490,44 @@ export const TeacherCounselingTab: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      {/* Header Banner & Create Action */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          {(onBackToReports || onNavigate) && (
+            <button
+              type="button"
+              onClick={() => (onBackToReports ? onBackToReports() : onNavigate?.('dashboard'))}
+              className="mb-2.5 inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 transition cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Kembali ke Dashboard Laporan</span>
+            </button>
+          )}
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
+              <CalendarCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900">
+                Jadwal Bimbingan Konseling (BK)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Kelola jadwal temu siswa, terbitkan sesi bimbingan baru, ubah agenda, dan simpan hasil konseling.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleOpenCreate}
+          className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition flex items-center justify-center gap-2 cursor-pointer shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Buat Jadwal Konseling</span>
+        </button>
+      </div>
+
       {/* Feedback Banner */}
       {feedback && (
         <div
@@ -548,7 +802,7 @@ export const TeacherCounselingTab: React.FC = () => {
                       Guru BK Tujuan: <strong>{apt.teacher_name || 'Guru BK'}</strong>
                     </span>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {apt.status === 'menunggu' && (
                         <>
                           <button
@@ -592,6 +846,37 @@ export const TeacherCounselingTab: React.FC = () => {
                           </button>
                         </>
                       )}
+
+                      {/* CRUD Actions: Detail, Edit, Hapus */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDetail(apt)}
+                        className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        title="Lihat Detail Lengkap"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-slate-500" />
+                        <span className="hidden sm:inline">Detail</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(apt)}
+                        className="px-2.5 py-1.5 rounded-xl border border-indigo-200 hover:bg-indigo-50 text-indigo-700 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        title="Edit Data Jadwal"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                        <span className="hidden sm:inline">Edit</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDelete(apt)}
+                        className="px-2.5 py-1.5 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-700 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        title="Hapus Jadwal Konseling"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span className="hidden sm:inline">Hapus</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -814,6 +1099,582 @@ export const TeacherCounselingTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal CRUD: Buat Jadwal Konseling Baru */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-6">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-indigo-50/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <CalendarCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Buat Jadwal Bimbingan Konseling</h3>
+                  <p className="text-[11px] text-slate-500">Jadwalkan sesi bimbingan konseling langsung bersama siswa</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmCreate} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+              {/* Filter Kelas & Pilih Siswa */}
+              <div className="space-y-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Pilih Siswa yang Dituju:
+                  </label>
+                  {allClasses.length > 0 && (
+                    <select
+                      value={createClassFilter}
+                      onChange={(e) => {
+                        setCreateClassFilter(e.target.value);
+                        const match = e.target.value
+                          ? studentOptions.find(s => s.class_id === e.target.value)
+                          : studentOptions[0];
+                        if (match) setCreateStudentId(match.id);
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-semibold bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="">Semua Kelas ({studentOptions.length})</option>
+                      {allClasses.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {filteredStudentOptions.length === 0 ? (
+                  <p className="text-xs text-amber-600 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                    Tidak ada siswa terdaftar pada filter kelas ini.
+                  </p>
+                ) : (
+                  <select
+                    value={createStudentId}
+                    onChange={(e) => setCreateStudentId(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {filteredStudentOptions.map(st => (
+                      <option key={st.id} value={st.id}>
+                        {st.name} ({st.class_name} • NIS: {st.nis || '-'})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Tanggal & Jam */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Tanggal Konseling:
+                  </label>
+                  <input
+                    type="date"
+                    value={createDate}
+                    onChange={(e) => setCreateDate(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Jam Konseling (WIB):
+                  </label>
+                  <input
+                    type="time"
+                    value={createTime}
+                    onChange={(e) => setCreateTime(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Bentuk & Status Awal */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Metode Konseling:
+                  </label>
+                  <select
+                    value={createType}
+                    onChange={(e) => setCreateType(e.target.value as CounselingType)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="tatap_muka">🏛️ Tatap Muka Ruang BK</option>
+                    <option value="online_chat">💬 Daring / Online Konseling</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Status Jadwal:
+                  </label>
+                  <select
+                    value={createStatus}
+                    onChange={(e) => setCreateStatus(e.target.value as CounselingAppointmentStatus)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="disetujui">✅ Disetujui (Langsung Terjadwal)</option>
+                    <option value="menunggu">⏳ Menunggu Konfirmasi</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Topik / Keperluan */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Keperluan / Topik Bimbingan:
+                </label>
+                <input
+                  type="text"
+                  value={createTopic}
+                  onChange={(e) => setCreateTopic(e.target.value)}
+                  placeholder="Contoh: Bimbingan Karir & Pemilihan Jurusan Kuliah..."
+                  required
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+
+                {/* Quick Topic Chips */}
+                <div className="mt-2 flex items-center flex-wrap gap-1.5">
+                  <span className="text-[10px] text-slate-400 font-semibold">Saran Topik:</span>
+                  {[
+                    'Bimbingan Karir & Studi Lanjut',
+                    'Konseling Belajar & Kehadiran',
+                    'Konseling Masalah Pribadi & Sosial',
+                    'Konsultasi Minat & Bakat'
+                  ].map((tip) => (
+                    <button
+                      key={tip}
+                      type="button"
+                      onClick={() => setCreateTopic(tip)}
+                      className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 text-[10px] font-medium transition cursor-pointer"
+                    >
+                      {tip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Catatan / Arahan */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Catatan Awal / Arahan Siswa (Opsional):
+                </label>
+                <textarea
+                  rows={2}
+                  value={createNotes}
+                  onChange={(e) => setCreateNotes(e.target.value)}
+                  placeholder="Contoh: Harap membawa berkas rapor dan hadir tepat waktu di Ruang BK..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isProcessing || filteredStudentOptions.length === 0}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-indigo-600/20"
+                >
+                  {isProcessing ? 'Menjadwalkan...' : 'Simpan & Jadwalkan Konseling'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal CRUD: Detail Lengkap Janji Konseling */}
+      {detailModalApt && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-6">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                  <Eye className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Detail Bimbingan Konseling</h3>
+                  <p className="text-[11px] text-slate-500">Informasi lengkap agenda dan catatan bimbingan</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailModalApt(null)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto text-xs">
+              {/* Profil Siswa */}
+              <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white font-bold flex items-center justify-center text-sm shrink-0">
+                    {detailModalApt.student_name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 text-sm">{detailModalApt.student_name}</h4>
+                    <p className="text-slate-500 text-[11px]">
+                      {detailModalApt.student_class_name || 'Siswa SMK'}
+                    </p>
+                  </div>
+                </div>
+                {getStatusBadge(detailModalApt.status)}
+              </div>
+
+              {/* Rincian Agenda */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Tanggal Temu</span>
+                  <p className="font-bold text-slate-800 mt-0.5 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                    {detailModalApt.confirmed_date || detailModalApt.requested_date}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Waktu Konseling</span>
+                  <p className="font-bold text-slate-800 mt-0.5 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                    Jam {detailModalApt.confirmed_time || detailModalApt.requested_time} WIB
+                  </p>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Metode Bimbingan</span>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {detailModalApt.counseling_type === 'tatap_muka' ? '🏛️ Tatap Muka Ruang BK' : '💬 Daring / Online Chat'}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Guru Pembimbing</span>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {detailModalApt.teacher_name || 'Guru BK'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Topik Konseling */}
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
+                <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">
+                  Topik / Keperluan Bimbingan:
+                </span>
+                <p className="text-slate-800 font-medium leading-relaxed">{detailModalApt.topic}</p>
+              </div>
+
+              {/* Alasan Penyesuaian Jadwal jika ada */}
+              {detailModalApt.reschedule_reason && (
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-blue-900 space-y-1">
+                  <span className="text-[10px] text-blue-600 block font-bold uppercase">
+                    Alasan Penyesuaian Jadwal:
+                  </span>
+                  <p className="font-medium">{detailModalApt.reschedule_reason}</p>
+                </div>
+              )}
+
+              {/* Catatan Konselor */}
+              {detailModalApt.notes && (
+                <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-950 space-y-1">
+                  <span className="text-[10px] text-emerald-700 block font-bold uppercase tracking-wider">
+                    Catatan & Solusi Konselor:
+                  </span>
+                  <p className="font-medium whitespace-pre-wrap">{detailModalApt.notes}</p>
+                </div>
+              )}
+
+              {/* Timestamps */}
+              <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-slate-100">
+                <span>Dibuat: {new Date(detailModalApt.created_at).toLocaleString('id-ID')}</span>
+                <span>Diperbarui: {new Date(detailModalApt.updated_at).toLocaleString('id-ID')}</span>
+              </div>
+
+              {/* Action Buttons in Detail Modal */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const apt = detailModalApt;
+                    setDetailModalApt(null);
+                    handleOpenEdit(apt);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition flex items-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit Data</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const apt = detailModalApt;
+                    setDetailModalApt(null);
+                    handleOpenDelete(apt);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs transition flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus Jadwal</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDetailModalApt(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal CRUD: Edit / Ubah Jadwal Konseling */}
+      {editModalApt && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-6">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-indigo-50/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Edit Jadwal Konseling</h3>
+                  <p className="text-[11px] text-slate-500">Siswa: {editModalApt.student_name} ({editModalApt.student_class_name || 'Siswa'})</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditModalApt(null)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmEdit} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+              {/* Tanggal & Jam */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Tanggal Konseling:
+                  </label>
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Jam Konseling (WIB):
+                  </label>
+                  <input
+                    type="time"
+                    value={editTime}
+                    onChange={(e) => setEditTime(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Metode & Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Metode Konseling:
+                  </label>
+                  <select
+                    value={editType}
+                    onChange={(e) => setEditType(e.target.value as CounselingType)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="tatap_muka">🏛️ Tatap Muka Ruang BK</option>
+                    <option value="online_chat">💬 Daring / Online Chat</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Status Bimbingan:
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as CounselingAppointmentStatus)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="menunggu">⏳ Menunggu Persetujuan</option>
+                    <option value="disetujui">✅ Disetujui</option>
+                    <option value="dijadwalkan_ulang">🔄 Dijadwalkan Ulang</option>
+                    <option value="selesai">🎓 Selesai Dilaksanakan</option>
+                    <option value="dibatalkan">❌ Dibatalkan</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Topik Konseling */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Topik / Keperluan Bimbingan:
+                </label>
+                <input
+                  type="text"
+                  value={editTopic}
+                  onChange={(e) => setEditTopic(e.target.value)}
+                  required
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Alasan Penyesuaian jika dijadwalkan ulang/dibatalkan */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Alasan Perubahan Jadwal / Keterangan (Opsional):
+                </label>
+                <input
+                  type="text"
+                  value={editRescheduleReason}
+                  onChange={(e) => setEditRescheduleReason(e.target.value)}
+                  placeholder="Contoh: Guru sedang ada rapat dinas..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Catatan Konselor */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Catatan Konseling / Solusi / Arahan Guru BK:
+                </label>
+                <textarea
+                  rows={3}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Catatan hasil percakapan atau tindak lanjut bimbingan..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Notify Checkbox */}
+              <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  id="notifyStudentCheck"
+                  checked={editNotifyStudent}
+                  onChange={(e) => setEditNotifyStudent(e.target.checked)}
+                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                />
+                <label htmlFor="notifyStudentCheck" className="text-xs text-slate-700 font-medium cursor-pointer">
+                  Kirim notifikasi otomatis ke siswa mengenai pembaruan jadwal ini
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditModalApt(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-indigo-600/20"
+                >
+                  {isProcessing ? 'Menyimpan...' : 'Simpan Perubahan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal CRUD: Hapus Jadwal Konseling */}
+      {deleteModalApt && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-rose-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-rose-100 flex items-center justify-between bg-rose-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Hapus Jadwal Konseling</h3>
+                  <p className="text-[11px] text-slate-500">Konfirmasi tindakan penghapusan</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteModalApt(null)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1">
+                <p>
+                  <strong>Siswa:</strong> {deleteModalApt.student_name} ({deleteModalApt.student_class_name || 'Siswa'})
+                </p>
+                <p>
+                  <strong>Waktu:</strong> {deleteModalApt.confirmed_date || deleteModalApt.requested_date} • Jam {deleteModalApt.confirmed_time || deleteModalApt.requested_time} WIB
+                </p>
+                <p className="text-slate-600 italic mt-1">"{deleteModalApt.topic}"</p>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <p>
+                  Jadwal bimbingan konseling ini akan <strong>dihapus permanen</strong> dari basis data. Tindakan ini tidak dapat dikembalikan.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalApt(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={handleConfirmDelete}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-rose-600/20"
+                >
+                  {isProcessing ? 'Menghapus...' : 'Hapus Permanen'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
