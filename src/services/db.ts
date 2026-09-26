@@ -2382,6 +2382,7 @@ class DatabaseService {
     bio?: string;
     available_hours?: string;
     managed_class_id?: string;
+    assigned_class_ids?: string[];
   }): { user: User; teacher: Teacher } {
     const now = new Date().toISOString();
     const randomSuffix = Math.random().toString(36).substring(2, 9);
@@ -2408,7 +2409,8 @@ class DatabaseService {
       room: data.room?.trim() || (data.teacher_type === 'guru_bk' ? 'Ruang BK' : 'Ruang Guru'),
       bio: data.bio?.trim() || (data.teacher_type === 'guru_bk' ? 'Mendampingi siswa dengan aman, suportif, dan menjaga privasi penuh.' : 'Mendampingi perkembangan akademik dan karakter kelas binaan.'),
       available_hours: data.available_hours?.trim() || 'Senin - Jumat (07.30 - 15.00 WIB)',
-      assigned_class_ids: [],
+      managed_class_id: data.teacher_type === 'wali_kelas' ? data.managed_class_id : undefined,
+      assigned_class_ids: data.teacher_type === 'guru_bk' && data.assigned_class_ids ? [...data.assigned_class_ids] : [],
       created_at: now
     };
     this.state.users.push(newUser);
@@ -2419,6 +2421,15 @@ class DatabaseService {
       if (cls) {
         cls.homeroom_teacher_id = newTeacher.id;
       }
+    }
+
+    if (data.teacher_type === 'guru_bk' && data.assigned_class_ids && data.assigned_class_ids.length > 0) {
+      const assignedSet = new Set(data.assigned_class_ids);
+      this.state.classes.forEach(c => {
+        if (assignedSet.has(c.id)) {
+          c.bk_teacher_id = newTeacher.id;
+        }
+      });
     }
 
     this.saveToStorage();

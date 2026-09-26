@@ -29,12 +29,13 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
 import { AdminUsersTab } from '../components/admin/AdminUsersTab';
+import { AdminClassesTab } from '../components/admin/AdminClassesTab';
 import { AdminCategoriesTab } from '../components/admin/AdminCategoriesTab';
 import { AdminReportsTab } from '../components/admin/AdminReportsTab';
 
 interface AdminDashboardProps {
   onNavigate: (tab: string, reportId?: string) => void;
-  activeSubTab?: 'dashboard' | 'reports' | 'users' | 'categories';
+  activeSubTab?: 'dashboard' | 'reports' | 'users' | 'classes' | 'categories';
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -42,7 +43,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   activeSubTab = 'dashboard'
 }) => {
   const { currentUser } = useAuth();
-  const [subTab, setSubTab] = useState<'dashboard' | 'reports' | 'users' | 'categories'>(activeSubTab);
+  const [subTab, setSubTab] = useState<'dashboard' | 'reports' | 'users' | 'classes' | 'categories'>(activeSubTab);
   const [resetMessage, setResetMessage] = useState('');
   const [tick, setTick] = useState(0);
 
@@ -395,11 +396,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* Database Status Metrics Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
-          <div className="p-3 bg-slate-50 rounded-xl">
+          <div
+            onClick={() => onNavigate('admin-classes')}
+            className="p-3 bg-slate-50 hover:bg-purple-50/70 rounded-xl cursor-pointer transition border border-transparent hover:border-purple-200"
+          >
             <span className="text-[11px] text-slate-500 font-medium block">Rombel Kelas Terdaftar</span>
             <span className="text-base font-extrabold text-slate-900">{displayClassCount} Kelas</span>
-            <span className="text-[10px] text-slate-400 block">
-              {displayClassCount === 0 ? 'Belum ada rombel' : 'X, XI, XII (11 Jurusan)'}
+            <span className="text-[10px] text-purple-600 font-semibold block">
+              Klik untuk kelola kelas →
             </span>
           </div>
 
@@ -612,6 +616,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           students={students}
           teachers={teachers}
           classes={classes}
+          onRefresh={handleRefresh}
+        />
+      )}
+
+      {/* Subtab 2B: Classes Management */}
+      {subTab === 'classes' && (
+        <AdminClassesTab
+          classes={classes}
+          teachers={teachers}
+          users={users}
+          students={students}
           onRefresh={handleRefresh}
         />
       )}

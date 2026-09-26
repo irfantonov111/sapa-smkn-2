@@ -41,7 +41,6 @@ import { decryptNip, maskNip } from '../../utils/nipCrypto';
 import { getDefaultAvatarByGender, detectGenderFromName } from '../../utils/avatar2d';
 import { TablePagination, PageSizeOption } from '../common/TablePagination';
 import { ResponsiveTableContainer } from '../common/ResponsiveTableContainer';
-import { AdminClassesModal } from './AdminClassesModal';
 import { BulkDeleteUsersModal } from './BulkDeleteUsersModal';
 
 interface AdminUsersTabProps {
@@ -72,9 +71,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState<boolean>(false);
   const [isDeletingBulk, setIsDeletingBulk] = useState<boolean>(false);
 
-  // Class management modal state
-  const [showClassesModal, setShowClassesModal] = useState<boolean>(false);
-
   // Modals state
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [newStudentData, setNewStudentData] = useState({ name: '', email: '', nis: '', class_id: '', gender: 'L' as Gender });
@@ -91,7 +87,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     room: '',
     bio: '',
     available_hours: '',
-    managed_class_id: ''
+    managed_class_id: '',
+    assigned_class_ids: [] as string[]
   });
 
   // Edit user modal
@@ -208,9 +205,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     if (!val || val === '-' || val.trim() === '') return undefined;
     const raw = val.trim().toLowerCase();
     const allTeachers = db.getTeachers();
+    const candidates = prefType
+      ? [...allTeachers.filter(t => t.teacher_type === prefType), ...allTeachers.filter(t => t.teacher_type !== prefType)]
+      : allTeachers;
 
     // 1. By NIP (exact or contained)
-    const byNip = allTeachers.find(t => {
+    const byNip = candidates.find(t => {
       const plainNip = decryptNip(t.nip).toLowerCase();
       const rawNip = t.nip.toLowerCase();
       return (plainNip && raw.includes(plainNip)) || (rawNip && raw.includes(rawNip));
@@ -218,14 +218,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     if (byNip) return byNip;
 
     // 2. By Email
-    const byEmail = allTeachers.find(t => {
+    const byEmail = candidates.find(t => {
       const u = db.getUserById(t.user_id);
       return u && raw.includes(u.email.toLowerCase());
     });
     if (byEmail) return byEmail;
 
     // 3. By Name
-    const byName = allTeachers.find(t => {
+    const byName = candidates.find(t => {
       const u = db.getUserById(t.user_id);
       if (!u) return false;
       const tName = u.name.toLowerCase();
@@ -233,9 +233,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     });
     if (byName) return byName;
 
-    if (prefType) {
-      return allTeachers.find(t => t.teacher_type === prefType);
-    }
     return undefined;
   };
 
@@ -263,14 +260,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     const wsStudent = XLSX.utils.aoa_to_sheet(studentRows);
     wsStudent['!cols'] = [{ wch: 28 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 32 }, { wch: 18 }];
 
-    // Sheet 3: Guru BK
+    // Sheet 3: Guru BK (Dilengkapi Kolom Kelas Binaan)
     const bkRows = [
-      ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Spesialisasi', 'Ruangan'],
-      ['Dra. Hj. Ratna Dewi, M.Pd', 'P', 'ratna.dewi@guru.belajar.id', '197508121999032001', '081234567891', 'Konseling Pribadi, Sosial & Bullying', 'Ruang BK 1 (Lt. 2)'],
-      ['Bambang Irawan, S.Pd., Kons.', 'L', 'bambang.konseling@guru.belajar.id', '198203142006041002', '081234567892', 'Layanan Karir & Konsultasi Belajar', 'Ruang BK 2 (Lt. 2)']
+      ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Kelas Binaan', 'Spesialisasi', 'Ruangan'],
+      ['Dra. Hj. Ratna Dewi, M.Pd', 'P', 'ratna.dewi@guru.belajar.id', '197508121999032001', '081234567891', 'X PPLG 1, XII DKV 1', 'Konseling Pribadi, Sosial & Bullying', 'Ruang BK 1 (Lt. 2)'],
+      ['Bambang Irawan, S.Pd., Kons.', 'L', 'bambang.konseling@guru.belajar.id', '198203142006041002', '081234567892', 'XI TKJ 2', 'Layanan Karir & Konsultasi Belajar', 'Ruang BK 2 (Lt. 2)']
     ];
     const wsBK = XLSX.utils.aoa_to_sheet(bkRows);
-    wsBK['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 32 }, { wch: 22 }, { wch: 18 }, { wch: 35 }, { wch: 22 }];
+    wsBK['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 32 }, { wch: 22 }, { wch: 18 }, { wch: 26 }, { wch: 35 }, { wch: 22 }];
 
     // Sheet 4: Wali Kelas
     const waliRows = [
@@ -309,6 +306,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       ['   - Email: Email resmi pendidik (Wajib diisi)'],
       ['   - NIP: 18 digit NIP resmi pendidik (Wajib diisi)'],
       ['   - No HP: Nomor telepon atau WhatsApp'],
+      ['   - Kelas Binaan: Nama rombel kelas yang dibina oleh Guru BK. Dapat diisi 1 kelas atau beberapa kelas dipisahkan tanda koma (contoh: X PPLG 1, XII DKV 1)'],
       ['   - Spesialisasi: Bidang fokus layanan konseling'],
       ['   - Ruangan: Lokasi ruang bimbingan konseling di sekolah'],
       ['   - Kata sandi default guru: guru123'],
@@ -319,7 +317,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       ['   - Email: Email resmi pendidik (Wajib diisi)'],
       ['   - NIP: 18 digit NIP resmi pendidik (Wajib diisi)'],
       ['   - No HP: Nomor telepon atau WhatsApp'],
-      ['   - Kelas Binaan: Nama rombel yang diampu (contoh: X PPLG 1)'],
+      ['   - Kelas Binaan: Nama rombel yang diampu oleh Wali Kelas (contoh: X PPLG 1)'],
       ['   - Kata sandi default guru: guru123'],
       [''],
       ['5. KETENTUAN FILE & INTEGRASI INTEROPERABILITAS:'],
@@ -376,9 +374,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         ['Nama', 'Jenis Kelamin (L/P)', 'NIS', 'Kelas', 'Email', 'No HP', 'Kata Sandi Default', 'Status Akun']
       ];
 
-      // 3. Sheet Guru BK
+      // 3. Sheet Guru BK (Dilengkapi Kolom Kelas Binaan)
       const bkRows: (string | number)[][] = [
-        ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Spesialisasi', 'Ruangan', 'Kata Sandi Default']
+        ['Nama', 'Jenis Kelamin (L/P)', 'Email', 'NIP', 'No HP', 'Kelas Binaan', 'Spesialisasi', 'Ruangan', 'Kata Sandi Default']
       ];
 
       // 4. Sheet Wali Kelas
@@ -403,7 +401,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         const studentInfo = students.find(s => s.user_id === u.id);
         const teacherInfo = teachers.find(t => t.user_id === u.id);
         const classInfo = studentInfo ? classes.find(c => c.id === studentInfo.class_id) : undefined;
-        const managedClass = teacherInfo ? classes.find(c => c.homeroom_teacher_id === teacherInfo.id || c.homeroom_teacher_id === teacherInfo.user_id) : undefined;
+        const managedClass = teacherInfo ? classes.find(c => c.homeroom_teacher_id === teacherInfo.id || c.homeroom_teacher_id === teacherInfo.user_id || c.id === teacherInfo.managed_class_id) : undefined;
 
         const effectiveGender: Gender = u.gender || studentInfo?.gender || teacherInfo?.gender || detectGenderFromName(u.name);
         const genderLabel = effectiveGender === 'P' ? 'Perempuan (P)' : 'Laki-laki (L)';
@@ -450,23 +448,29 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           ]);
         } else if (teacherInfo?.teacher_type === 'guru_bk') {
           roleLabel = 'Guru BK';
-          idNumber = teacherInfo.nip;
+          const plainNip = decryptNip(teacherInfo.nip);
+          idNumber = plainNip;
           username = u.email;
           password = 'guru123';
-          className = 'Semua Kelas (BK Sekolah)';
+          const bkAssignedClasses = classes.filter(
+            c => teacherInfo.assigned_class_ids?.includes(c.id) || c.bk_teacher_id === teacherInfo.id || c.bk_teacher_id === teacherInfo.user_id
+          );
+          className = bkAssignedClasses.length > 0 ? bkAssignedClasses.map(c => c.name).join(', ') : '-';
           bkRows.push([
             u.name,
             genderCode,
             u.email,
-            teacherInfo.nip,
+            plainNip,
             u.phone || teacherInfo.phone || '-',
+            className,
             teacherInfo.specialization || 'Konseling Pribadi & Sosial',
             teacherInfo.room || 'Ruang BK',
             'guru123'
           ]);
         } else if (teacherInfo?.teacher_type === 'wali_kelas') {
           roleLabel = 'Wali Kelas';
-          idNumber = teacherInfo.nip;
+          const plainNip = decryptNip(teacherInfo.nip);
+          idNumber = plainNip;
           username = u.email;
           password = 'guru123';
           className = managedClass ? managedClass.name : '-';
@@ -474,7 +478,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             u.name,
             genderCode,
             u.email,
-            teacherInfo.nip,
+            plainNip,
             u.phone || teacherInfo.phone || '-',
             className,
             teacherInfo.room || 'Ruang Guru',
@@ -507,7 +511,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         { wch: 30 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 32 }, { wch: 18 }, { wch: 20 }, { wch: 18 }
       ];
       wsBk['!cols'] = [
-        { wch: 32 }, { wch: 20 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 35 }, { wch: 22 }, { wch: 18 }
+        { wch: 32 }, { wch: 20 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 26 }, { wch: 35 }, { wch: 22 }, { wch: 18 }
       ];
       wsWali['!cols'] = [
         { wch: 32 }, { wch: 20 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 18 }
@@ -614,6 +618,35 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           }
         });
 
+        // Step 0: Pre-create classes from Data Kelas so class IDs and metadata exist before linking teachers
+        sheetMap.classes.forEach((sheetName) => {
+          const worksheet = workbook.Sheets[sheetName];
+          const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+          rawRows.forEach((raw) => {
+            const r = normRow(raw);
+            const className = r['namakelas'] || r['kelas'] || r['rombel'] || '';
+            if (!className) return;
+
+            const grade = r['tingkat'] || r['tingkat101112'] || r['jenjang'] || (className.includes('XI') ? '11' : className.includes('XII') ? '12' : '10');
+            const major = r['jurusan'] || r['kompetensikeahlian'] || 'Umum';
+
+            const allCls = db.getClasses();
+            const existingCls = allCls.find(c => c.name.toLowerCase() === className.toLowerCase().trim());
+            if (existingCls) {
+              db.updateClass(existingCls.id, { grade, major });
+            } else {
+              db.addClass({
+                name: className.trim(),
+                grade,
+                major,
+                homeroom_teacher_id: null
+              });
+              kelasAdded++;
+            }
+          });
+        });
+
         // Step 1: Process Teachers (Guru BK & Wali Kelas)
         sheetMap.teachers.forEach((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
@@ -628,9 +661,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             const email = r['email'] || r['surel'] || r['emailresmi'] || '';
             const nip = r['nip'] || r['nopegawai'] || '';
             const phone = r['nohp'] || r['hp'] || r['phone'] || r['telepon'] || r['wa'] || r['noteleponwa'] || '';
-            const className = r['kelasbinaan'] || r['kelas'] || r['rombel'] || '';
-            const specialization = r['spesialisasi'] || r['bidang'] || r['keahlian'] || r['spesialisasikonseling'] || 'Konseling Pribadi, Sosial & Bullying';
-            const room = r['ruangan'] || r['ruang'] || r['lokasi'] || 'Ruang BK';
+            const className = r['kelasbinaan'] || r['kelas'] || r['rombel'] || r['kelasdiampu'] || '';
+            const rawSpecialization = r['spesialisasi'] || r['bidang'] || r['keahlian'] || r['spesialisasikonseling'] || '';
+            const rawRoom = r['ruangan'] || r['ruang'] || r['lokasi'] || '';
+            const roleCol = (r['peran'] || r['role'] || r['jabatan'] || r['jenisguru'] || r['kategori'] || r['kategoriakun'] || '').toLowerCase();
 
             const rawGender = r['jeniskelamin'] || r['gender'] || r['jk'] || r['sex'] || r['jeniskelaminlp'] || '';
             let gender: Gender = 'L';
@@ -641,29 +675,66 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               gender = detectGenderFromName(name);
             }
 
-            const isBk = lowerSheet.includes('bk') || lowerSheet.includes('konseling') || specialization.toLowerCase().includes('konseling');
+            // Determine accurately whether this row is Guru BK or Wali Kelas
+            let isBk = false;
+            if (lowerSheet.includes('wali')) {
+              isBk = false;
+            } else if (lowerSheet.includes('bk') || lowerSheet.includes('konseling')) {
+              isBk = true;
+            } else if (roleCol.includes('wali')) {
+              isBk = false;
+            } else if (roleCol.includes('bk') || roleCol.includes('konseling')) {
+              isBk = true;
+            } else if (
+              rawSpecialization.toLowerCase().includes('konseling') ||
+              rawSpecialization.toLowerCase().includes('bk') ||
+              rawSpecialization.toLowerCase().includes('bimbingan')
+            ) {
+              isBk = true;
+            } else {
+              isBk = false;
+            }
+
             const finalNip = nip || (isBk ? `1980${Math.floor(10000000 + Math.random() * 90000000)}` : `1985${Math.floor(10000000 + Math.random() * 90000000)}`);
             const finalEmail = email || (isBk ? `gurubk_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id` : `walikelas_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`);
 
             const existingTeacher = db.getTeachers().find(t => {
               const plainNip = decryptNip(t.nip).toLowerCase();
-              return t.nip === finalNip || plainNip === finalNip.toLowerCase();
+              const tUser = db.getUserById(t.user_id);
+              const matchNip = finalNip && (t.nip === finalNip || plainNip === finalNip.toLowerCase());
+              const matchEmail = email && tUser && tUser.email.toLowerCase() === email.toLowerCase();
+              return Boolean(matchNip || matchEmail);
             });
 
             if (isBk) {
+              const specialization = rawSpecialization || 'Konseling Pribadi, Sosial & Bullying';
+              const room = rawRoom || 'Ruang BK';
+              // Parse Kelas Binaan for Guru BK (supports comma/semicolon separated list of classes)
+              const bkClassNames = className
+                .split(/[,;]+/)
+                .map(s => s.trim())
+                .filter(s => s.length > 0 && s !== '-' && !s.toLowerCase().includes('semua kelas'));
+              const bkClassIds = bkClassNames.map(cn => resolveClassId(cn)).filter(Boolean);
+
               if (existingTeacher) {
+                const mergedClassIds = Array.from(new Set([...(existingTeacher.assigned_class_ids || []), ...bkClassIds]));
                 db.updateTeacher(existingTeacher.id, {
+                  teacher_type: 'guru_bk',
                   gender,
-                  specialization: specialization || existingTeacher.specialization,
-                  room: room || existingTeacher.room
+                  specialization: rawSpecialization || existingTeacher.specialization || specialization,
+                  room: rawRoom || existingTeacher.room || room,
+                  assigned_class_ids: mergedClassIds
                 });
+                if (bkClassIds.length > 0) {
+                  db.assignBkClasses(existingTeacher.id, mergedClassIds);
+                }
                 db.updateUser(existingTeacher.user_id, {
                   name,
                   gender,
                   phone: phone || undefined
                 });
               } else {
-                db.addTeacher({
+                const createdBk = db.addTeacher({
                   name,
                   email: finalEmail,
                   nip: finalNip,
@@ -673,16 +744,28 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   specialization,
                   room,
                   bio: 'Guru Bimbingan dan Konseling sekolah siap mendampingi siswa.',
-                  available_hours: 'Senin - Jumat 07.30 - 15.00 WIB'
+                  available_hours: 'Senin - Jumat 07.30 - 15.00 WIB',
+                  assigned_class_ids: bkClassIds
                 });
+                if (bkClassIds.length > 0 && createdBk?.teacher) {
+                  db.assignBkClasses(createdBk.teacher.id, bkClassIds);
+                }
                 bkAdded++;
               }
             } else {
-              // Wali Kelas
-              const classId = className ? resolveClassId(className) : '';
+              // Wali Kelas (Guru Wali)
+              const firstClassName = className.split(/[,;]+/)[0]?.trim() || '';
+              const classId = firstClassName && firstClassName !== '-' ? resolveClassId(firstClassName) : '';
+              const specialization = rawSpecialization || `Wali Kelas ${firstClassName || ''}`.trim();
+              const room = rawRoom || 'Ruang Guru Utama';
+
               if (existingTeacher) {
                 db.updateTeacher(existingTeacher.id, {
-                  gender
+                  teacher_type: 'wali_kelas',
+                  gender,
+                  specialization,
+                  room,
+                  managed_class_id: classId || existingTeacher.managed_class_id
                 });
                 db.updateUser(existingTeacher.user_id, {
                   name,
@@ -700,8 +783,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   gender,
                   phone,
                   teacher_type: 'wali_kelas',
-                  specialization: `Wali Kelas ${className || ''}`,
-                  room: room || 'Ruang Guru Utama',
+                  specialization,
+                  room,
                   managed_class_id: classId,
                   bio: 'Wali kelas pendamping perkembangan akademik dan perilaku siswa.',
                   available_hours: 'Senin - Jumat 07.30 - 15.00 WIB'
@@ -715,7 +798,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           });
         });
 
-        // Step 2: Process Classes (Data Kelas)
+        // Step 2: Link Teachers in Data Kelas (Wali Kelas & Guru BK columns)
         sheetMap.classes.forEach((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
           const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
@@ -725,8 +808,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             const className = r['namakelas'] || r['kelas'] || r['rombel'] || '';
             if (!className) return;
 
-            const grade = r['tingkat'] || r['jenjang'] || (className.includes('XI') ? '11' : className.includes('XII') ? '12' : '10');
-            const major = r['jurusan'] || r['kompetensikeahlian'] || 'Umum';
             const waliVal = r['walikelas'] || r['walikelasnamanip'] || r['nipwalikelas'] || '';
             const bkVal = r['gurubk'] || r['gurubknamanip'] || r['nipgurubk'] || '';
 
@@ -738,20 +819,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
             if (existingCls) {
               db.updateClass(existingCls.id, {
-                grade,
-                major,
                 homeroom_teacher_id: matchedWali ? matchedWali.id : existingCls.homeroom_teacher_id,
                 bk_teacher_id: matchedBk ? matchedBk.id : existingCls.bk_teacher_id
               });
-            } else {
-              db.addClass({
-                name: className.trim(),
-                grade,
-                major,
-                homeroom_teacher_id: matchedWali ? matchedWali.id : null,
-                bk_teacher_id: matchedBk ? matchedBk.id : undefined
-              });
-              kelasAdded++;
+              if (matchedWali) {
+                db.updateTeacher(matchedWali.id, { managed_class_id: existingCls.id });
+              }
             }
           });
         });
@@ -850,9 +923,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 }
               } else if (role.includes('bk')) {
                 const finalNip = nisNip || `1980${Math.floor(10000000 + Math.random() * 90000000)}`;
-                const existingTeacher = db.getTeachers().find(t => t.nip === finalNip);
+                const bkClassNames = className
+                  .split(/[,;]+/)
+                  .map(s => s.trim())
+                  .filter(s => s.length > 0 && s !== '-' && !s.toLowerCase().includes('semua kelas'));
+                const bkClassIds = bkClassNames.map(cn => resolveClassId(cn)).filter(Boolean);
+                const existingTeacher = db.getTeachers().find(
+                  t => t.nip === finalNip || decryptNip(t.nip).toLowerCase() === finalNip.toLowerCase()
+                );
                 if (!existingTeacher) {
-                  db.addTeacher({
+                  const createdBk = db.addTeacher({
                     name,
                     email: email || `gurubk_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`,
                     nip: finalNip,
@@ -862,28 +942,38 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     specialization: 'Konseling Bimbingan',
                     room: 'Ruang BK',
                     bio: 'Guru BK Sekolah',
-                    available_hours: 'Senin - Jumat'
+                    available_hours: 'Senin - Jumat',
+                    assigned_class_ids: bkClassIds
                   });
+                  if (bkClassIds.length > 0 && createdBk?.teacher) {
+                    db.assignBkClasses(createdBk.teacher.id, bkClassIds);
+                  }
                   bkAdded++;
                 }
               } else if (role.includes('wali')) {
                 const finalNip = nisNip || `1985${Math.floor(10000000 + Math.random() * 90000000)}`;
-                const classId = className ? resolveClassId(className) : '';
-                const existingTeacher = db.getTeachers().find(t => t.nip === finalNip);
+                const firstClassName = className.split(/[,;]+/)[0]?.trim() || '';
+                const classId = firstClassName && firstClassName !== '-' ? resolveClassId(firstClassName) : '';
+                const existingTeacher = db.getTeachers().find(
+                  t => t.nip === finalNip || decryptNip(t.nip).toLowerCase() === finalNip.toLowerCase()
+                );
                 if (!existingTeacher) {
-                  db.addTeacher({
+                  const newT = db.addTeacher({
                     name,
                     email: email || `walikelas_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`,
                     nip: finalNip,
                     gender,
                     phone,
                     teacher_type: 'wali_kelas',
-                    specialization: `Wali Kelas ${className}`,
+                    specialization: `Wali Kelas ${firstClassName}`,
                     room: 'Ruang Guru',
                     managed_class_id: classId,
                     bio: 'Wali Kelas Pendamping',
                     available_hours: 'Senin - Jumat'
                   });
+                  if (classId && newT?.teacher) {
+                    db.updateClass(classId, { homeroom_teacher_id: newT.teacher.id });
+                  }
                   waliAdded++;
                 }
               }
@@ -946,7 +1036,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       room: '',
       bio: '',
       available_hours: '',
-      managed_class_id: ''
+      managed_class_id: '',
+      assigned_class_ids: []
     });
     onRefresh();
     showFeedback(`Akun ${newTeacherData.teacher_type === 'guru_bk' ? 'Guru BK' : 'Wali Kelas'} berhasil dibuat.`);
@@ -1272,12 +1363,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 email: '',
                 nip: '',
                 teacher_type: 'guru_bk',
+                gender: 'L',
                 phone: '',
                 specialization: 'Konseling Pribadi, Sosial & Penanganan Bullying',
                 room: 'Ruang BK',
                 bio: 'Mendampingi siswa dengan pendekatan suportif & kerahasiaan penuh.',
                 available_hours: 'Senin - Jumat (07.30 - 15.00 WIB)',
-                managed_class_id: ''
+                managed_class_id: '',
+                assigned_class_ids: []
               });
               setShowAddTeacher(true);
             }}
@@ -1296,12 +1389,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 email: '',
                 nip: '',
                 teacher_type: 'wali_kelas',
+                gender: 'L',
                 phone: '',
                 specialization: 'Wali Kelas & Akademik',
                 room: 'Ruang Guru Utama',
                 bio: 'Mendampingi kelas binaan dan koordinasi pembelajaran.',
                 available_hours: 'Senin - Jumat (07.30 - 15.00 WIB)',
-                managed_class_id: classes[0]?.id || ''
+                managed_class_id: classes[0]?.id || '',
+                assigned_class_ids: []
               });
               setShowAddTeacher(true);
             }}
@@ -1315,24 +1410,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           <button
             type="button"
             onClick={() => {
-              setNewStudentData({ name: '', email: '', nis: '', class_id: classes[0]?.id || '' });
+              setNewStudentData({ name: '', email: '', nis: '', class_id: classes[0]?.id || '', gender: 'L' });
               setShowAddStudent(true);
             }}
             className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition"
           >
             <GraduationCap className="w-3.5 h-3.5" />
             <span>+ Siswa Baru</span>
-          </button>
-
-          {/* Manage Classes & BK Assignments */}
-          <button
-            type="button"
-            onClick={() => setShowClassesModal(true)}
-            title="Kelola Data Rombel Kelas & Atur Penugasan Guru BK"
-            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-          >
-            <School className="w-3.5 h-3.5" />
-            <span>Kelola Kelas & Guru BK</span>
           </button>
         </div>
       </div>
@@ -2088,15 +2172,55 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 )}
 
                 {newTeacherData.teacher_type === 'guru_bk' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Spesialisasi Konseling</label>
-                    <input
-                      type="text"
-                      value={newTeacherData.specialization}
-                      onChange={(e) => setNewTeacherData({ ...newTeacherData, specialization: e.target.value })}
-                      placeholder="Konseling Pribadi & Sosial"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                    />
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Spesialisasi Konseling</label>
+                      <input
+                        type="text"
+                        value={newTeacherData.specialization}
+                        onChange={(e) => setNewTeacherData({ ...newTeacherData, specialization: e.target.value })}
+                        placeholder="Konseling Pribadi & Sosial"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-purple-50/70 rounded-2xl border border-purple-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold text-purple-950">
+                          Kelas Binaan (Opsional)
+                        </label>
+                        <span className="text-[11px] font-bold text-purple-700">
+                          {newTeacherData.assigned_class_ids.length} Kelas Dipilih
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                        {classes.map(cls => {
+                          const isSelected = newTeacherData.assigned_class_ids.includes(cls.id);
+                          return (
+                            <button
+                              key={cls.id}
+                              type="button"
+                              onClick={() => {
+                                setNewTeacherData(prev => ({
+                                  ...prev,
+                                  assigned_class_ids: isSelected
+                                    ? prev.assigned_class_ids.filter(id => id !== cls.id)
+                                    : [...prev.assigned_class_ids, cls.id]
+                                }));
+                              }}
+                              className={`p-2 rounded-xl text-left border text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                                isSelected
+                                  ? 'bg-purple-600 text-white border-purple-600'
+                                  : 'bg-white text-slate-700 border-purple-200 hover:bg-purple-50'
+                              }`}
+                            >
+                              <span className="truncate">{cls.name}</span>
+                              {isSelected && <Check className="w-3 h-3 shrink-0 stroke-[3]" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2744,17 +2868,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           </div>
         </div>
       )}
-
-      {/* Admin Classes & Guru BK Assignment Modal */}
-      <AdminClassesModal
-        isOpen={showClassesModal}
-        onClose={() => setShowClassesModal(false)}
-        classes={classes}
-        teachers={teachers}
-        users={users}
-        students={students}
-        onRefresh={onRefresh}
-      />
 
       {/* Bulk Delete Users Confirmation Modal */}
       <BulkDeleteUsersModal

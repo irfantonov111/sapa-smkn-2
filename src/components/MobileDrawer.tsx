@@ -16,7 +16,8 @@ import {
   Shield,
   Sparkles,
   HeartHandshake,
-  CalendarDays
+  CalendarDays,
+  School
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -406,6 +407,22 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                   <span>Kelola Pengguna</span>
                 </div>
                 <ChevronRight className={`w-3.5 h-3.5 ${activeTab === 'admin-users' ? 'text-white' : 'text-slate-400'}`} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleItemClick('admin-classes')}
+                className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition ${
+                  activeTab === 'admin-classes'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <School className="w-4 h-4" />
+                  <span>Kelola Kelas</span>
+                </div>
+                <ChevronRight className={`w-3.5 h-3.5 ${activeTab === 'admin-classes' ? 'text-white' : 'text-slate-400'}`} />
               </button>
 
               <button

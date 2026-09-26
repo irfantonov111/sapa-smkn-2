@@ -14,7 +14,8 @@ import {
   Megaphone,
   Menu,
   HeartHandshake,
-  CalendarDays
+  CalendarDays,
+  School
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -67,6 +68,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
       { id: 'admin-reports', label: 'Kelola Laporan', icon: FileText, badge: totalReports },
       { id: 'announcements', label: 'Pengumuman', icon: Megaphone },
       { id: 'admin-users', label: 'Kelola Pengguna', icon: Users },
+      { id: 'admin-classes', label: 'Kelola Kelas', icon: School },
       { id: 'admin-categories', label: 'Kategori', icon: Layers },
       { id: 'profile', label: 'Profil', icon: User }
     ];
@@ -309,6 +311,17 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
             >
               <Users className="w-5 h-5" />
               <span className="text-[10px] mt-0.5 tracking-tight">Pengguna</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('admin-classes')}
+              className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
+                currentActive === 'admin-classes' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <School className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5 tracking-tight">Kelas</span>
             </button>
 
             <button

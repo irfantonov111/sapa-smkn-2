@@ -141,6 +141,9 @@ const MainApp: React.FC = () => {
       case 'admin-users':
         return <AdminDashboard key="admin-users" onNavigate={handleNavigate} activeSubTab="users" />;
 
+      case 'admin-classes':
+        return <AdminDashboard key="admin-classes" onNavigate={handleNavigate} activeSubTab="classes" />;
+
       case 'admin-categories':
         return <AdminDashboard key="admin-categories" onNavigate={handleNavigate} activeSubTab="categories" />;
 
