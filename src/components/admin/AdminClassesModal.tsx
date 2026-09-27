@@ -554,6 +554,7 @@ export const AdminClassesModal: React.FC<AdminClassesModalProps> = ({
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[11px]">
+                      <th className="p-3.5 w-12 text-center">No</th>
                       <th className="p-3.5">Nama Kelas</th>
                       <th className="p-3.5">Tingkat & Jurusan</th>
                       <th className="p-3.5">Wali Kelas</th>
@@ -563,7 +564,7 @@ export const AdminClassesModal: React.FC<AdminClassesModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {classes.map((cls) => {
+                    {classes.map((cls, idx) => {
                       const studentCount = students.filter(s => s.class_id === cls.id).length;
                       const homeroom = homeroomTeachers.find(
                         t => t.id === cls.homeroom_teacher_id || t.user_id === cls.homeroom_teacher_id
@@ -577,6 +578,9 @@ export const AdminClassesModal: React.FC<AdminClassesModalProps> = ({
 
                       return (
                         <tr key={cls.id} className="hover:bg-slate-50/70 transition">
+                          <td className="p-3.5 text-center font-bold text-slate-400">
+                            {idx + 1}
+                          </td>
                           <td className="p-3.5 font-bold text-slate-900 flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-purple-500" />
                             <span>{cls.name}</span>

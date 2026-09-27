@@ -836,6 +836,7 @@ export const AdminClassesTab: React.FC<AdminClassesTabProps> = ({
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[11px]">
+                    <th className="p-3.5 w-12 text-center">No</th>
                     <th className="p-3.5">Nama Kelas</th>
                     <th className="p-3.5">Tingkat & Jurusan</th>
                     <th className="p-3.5">Wali Kelas</th>
@@ -847,17 +848,20 @@ export const AdminClassesTab: React.FC<AdminClassesTabProps> = ({
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {filteredClasses.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
                         Tidak ada data rombel kelas yang sesuai dengan filter pencarian.
                       </td>
                     </tr>
                   ) : (
-                    filteredClasses.map(cls => {
+                    filteredClasses.map((cls, idx) => {
                       const studentCount = students.filter(s => s.class_id === cls.id).length;
                       const { homeroom, homeroomUser, bkTeacher, bkUser } = getClassTeachers(cls);
 
                       return (
                         <tr key={cls.id} className="hover:bg-slate-50/70 transition">
+                          <td className="p-3.5 text-center font-bold text-slate-400">
+                            {idx + 1}
+                          </td>
                           <td className="p-3.5 font-bold text-slate-900">
                             <div className="flex items-center gap-2">
                               <span className="w-2.5 h-2.5 rounded-full bg-purple-600 shrink-0" />
@@ -1185,6 +1189,7 @@ export const AdminClassesTab: React.FC<AdminClassesTabProps> = ({
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[11px]">
+                    <th className="p-3.5 w-12 text-center">No</th>
                     <th className="p-3.5">Nama Wali Kelas</th>
                     <th className="p-3.5">NIP & Kontak</th>
                     <th className="p-3.5">Kelas Binaan Saat Ini</th>
@@ -1195,12 +1200,12 @@ export const AdminClassesTab: React.FC<AdminClassesTabProps> = ({
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {homeroomTeachers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-400">
+                      <td colSpan={6} className="p-8 text-center text-slate-400">
                         Belum ada data Guru Wali Kelas terdaftar.
                       </td>
                     </tr>
                   ) : (
-                    homeroomTeachers.map(teacher => {
+                    homeroomTeachers.map((teacher, idx) => {
                       const u = users.find(usr => usr.id === teacher.user_id);
                       const managedCls = classes.find(
                         c => c.homeroom_teacher_id === teacher.id || c.homeroom_teacher_id === teacher.user_id || c.id === teacher.managed_class_id
@@ -1211,6 +1216,9 @@ export const AdminClassesTab: React.FC<AdminClassesTabProps> = ({
 
                       return (
                         <tr key={teacher.id} className="hover:bg-slate-50/70 transition">
+                          <td className="p-3.5 text-center font-bold text-slate-400">
+                            {idx + 1}
+                          </td>
                           <td className="p-3.5">
                             <div className="flex items-center gap-3">
                               <img
@@ -1358,6 +1366,7 @@ export const AdminClassesTab: React.FC<AdminClassesTabProps> = ({
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[11px]">
+                      <th className="p-3 w-12 text-center">No</th>
                       <th className="p-3">Nama Siswa</th>
                       <th className="p-3">NIS</th>
                       <th className="p-3">Email</th>
@@ -1381,17 +1390,20 @@ export const AdminClassesTab: React.FC<AdminClassesTabProps> = ({
                       if (classStudents.length === 0) {
                         return (
                           <tr>
-                            <td colSpan={4} className="p-6 text-center text-slate-400">
+                            <td colSpan={5} className="p-6 text-center text-slate-400">
                               Belum ada siswa terdaftar di kelas {managingStudentsClass.name}.
                             </td>
                           </tr>
                         );
                       }
 
-                      return classStudents.map(st => {
+                      return classStudents.map((st, idx) => {
                         const u = users.find(usr => usr.id === st.user_id);
                         return (
                           <tr key={st.id} className="hover:bg-slate-50">
+                            <td className="p-3 text-center font-bold text-slate-400">
+                              {idx + 1}
+                            </td>
                             <td className="p-3 font-bold text-slate-900">
                               <div className="flex items-center gap-2.5">
                                 <img

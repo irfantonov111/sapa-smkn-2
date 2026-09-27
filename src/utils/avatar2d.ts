@@ -178,7 +178,18 @@ export function getDefaultAvatarByGender(
   role: 'siswa' | 'guru' | 'admin',
   gender?: 'L' | 'P' | 'Laki-laki' | 'Perempuan' | string
 ): string {
-  const isFemale = gender === 'P' || gender === 'Perempuan' || (typeof gender === 'string' && gender.toLowerCase().startsWith('p'));
+  const g = typeof gender === 'string' ? gender.trim().toUpperCase() : '';
+  const isFemale =
+    g === 'P' ||
+    g === 'PR' ||
+    g === 'W' ||
+    g === 'F' ||
+    g.includes('PEREMPUAN') ||
+    g.includes('WANITA') ||
+    g.includes('FEMALE') ||
+    g.includes('CEWEK') ||
+    g.includes('PUTRI') ||
+    g.includes('(P)');
   if (role === 'siswa') {
     return isFemale ? AVATAR_2D_STUDENT_FEMALE : AVATAR_2D_STUDENT_MALE;
   }
@@ -189,17 +200,27 @@ export function getDefaultAvatarByGender(
  * Heuristic helper to deduce gender from Indonesian name if gender field was omitted in legacy data
  */
 export function detectGenderFromName(name: string): 'L' | 'P' {
-  const lower = name.toLowerCase();
+  const lower = (name || '').toLowerCase();
+
+  // Check explicit title/honorific indicators first
+  if (/\b(dra|hj|ibu|bu|ny|nona|nn|siti|ratna|rina|sri|dewi|putri|ayu|anisa|annisa|fatimah|aisyah|zahra)\b/i.test(lower)) {
+    return 'P';
+  }
+  if (/\b(drs|bapak|pak|bp|muhammad|mohammad|mochammad|achmad|ahmad|budi|agus|eko|bambang|hendra|hendro|joko|rudi|dedi|andi|dimas|bagas|ilham|saputra|pratama|santoso|wijaya|setiawan|hidayat|kurniawan|irawan|gunawan|wibowo|fauzi|wahyudi)\b/i.test(lower)) {
+    return 'L';
+  }
+
   const femaleIndicators = [
-    'siti', 'nur', 'dewi', 'putri', 'ayu', 'retno', 'tri', 'lestari', 'indah',
-    'ani', 'rina', 'ratih', 'fitri', 'anita', 'wulandari', 'kusuma', 'sari',
-    'wahyuni', 'dian', 'endang', 'rahayu', 'yuni', 'kartika', 'lia', 'maya',
-    'fatimah', 'aisyah', 'zahra', 'novita', 'eka', 'susanti', 'handayani',
-    'rahma', 'widya', 'hartini', 'sulastri', 'ningsih', 'marina', 'intan'
+    'siti', 'dewi', 'putri', 'ayu', 'retno', 'lestari', 'indah',
+    'ani', 'rina', 'ratih', 'fitri', 'anita', 'wulandari', 'sari',
+    'wahyuni', 'endang', 'rahayu', 'yuni', 'kartika', 'lia', 'maya',
+    'fatimah', 'aisyah', 'zahra', 'novita', 'susanti', 'handayani',
+    'rahma', 'rahmawati', 'widya', 'hartini', 'sulastri', 'ningsih',
+    'marina', 'intan', 'ratna', 'nabila', 'nadia', 'amelia', 'tiara',
+    'citra', 'melati', 'bunga', 'puji', 'astuti', 'suci', 'nurul'
   ];
 
   for (const ind of femaleIndicators) {
-    // Check word boundary or substring
     const regex = new RegExp(`\\b${ind}\\b`, 'i');
     if (regex.test(lower)) {
       return 'P';

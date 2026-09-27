@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   FileText,
   Search,
@@ -37,6 +37,13 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
   // Reload trigger
   const [version, setVersion] = useState(0);
   const refresh = () => setVersion(v => v + 1);
+
+  useEffect(() => {
+    const unsub = db.subscribe(() => {
+      setVersion(v => v + 1);
+    });
+    return () => unsub();
+  }, []);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -541,7 +548,8 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
               <table className="w-full text-left text-xs text-slate-700">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200 sticky top-0 z-10 shadow-xs">
                   <tr>
-                    <th className="p-3.5 pl-4 w-10">
+                    <th className="p-3.5 pl-4 w-12 text-center">No</th>
+                    <th className="p-3.5 w-10">
                       <button
                         type="button"
                         onClick={toggleSelectAll}
@@ -567,7 +575,8 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {paginatedReports.map((report) => {
+                  {paginatedReports.map((report, idx) => {
+                  const rowNumber = (pageSize === 'all' ? 0 : (currentPage - 1) * pageSize) + idx + 1;
                   const isChecked = selectedIds.includes(report.id);
                   return (
                     <tr
@@ -576,8 +585,13 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
                         isChecked ? 'bg-purple-50/60' : ''
                       }`}
                     >
+                      {/* Row Number */}
+                      <td className="p-3.5 pl-4 text-center font-bold text-slate-400">
+                        {rowNumber}
+                      </td>
+
                       {/* Checkbox */}
-                      <td className="p-3.5 pl-4">
+                      <td className="p-3.5">
                         <button
                           type="button"
                           onClick={() => toggleSelectOne(report.id)}

@@ -43,6 +43,8 @@ import {
   createClass,
   updateClassDetails,
   deleteClassPermanently,
+  assignBkClassesOnServer,
+  syncStateFromClient,
   updateCategoryDetails,
   deleteCategoryPermanently,
   getAnnouncements,
@@ -113,6 +115,16 @@ apiRouter.get('/sync', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Error fetching full database state:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Push full state from client to server memoryStore (for batch Excel imports)
+apiRouter.post('/sync/push', async (req: Request, res: Response) => {
+  try {
+    await syncStateFromClient(req.body || {});
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -343,11 +355,11 @@ apiRouter.post('/users/:id/change-password', async (req: Request, res: Response)
 // Create student
 apiRouter.post('/users/student', async (req: Request, res: Response) => {
   try {
-    const { name, email, nis, class_id, password, phone, gender } = req.body;
+    const { id, user_id, name, email, nis, class_id, password, phone, gender } = req.body;
     if (!name || !email || !nis || !class_id) {
       return res.status(400).json({ error: 'Nama, Email, NIS, dan Kelas wajib diisi' });
     }
-    const result = await createStudent({ name, email, nis, class_id, password, phone, gender });
+    const result = await createStudent({ id, user_id, name, email, nis, class_id, password, phone, gender });
     res.status(201).json({ success: true, ...result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -357,12 +369,12 @@ apiRouter.post('/users/student', async (req: Request, res: Response) => {
 // Create teacher
 apiRouter.post('/users/teacher', async (req: Request, res: Response) => {
   try {
-    const { name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids, gender } = req.body;
+    const { id, user_id, name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids, gender } = req.body;
     if (!name || !email || !nip || !teacher_type) {
       return res.status(400).json({ error: 'Nama, Email, NIP, dan Peran Guru wajib diisi' });
     }
     const result = await createTeacher({
-      name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids, gender
+      id, user_id, name, email, nip, teacher_type, phone, specialization, room, bio, available_hours, managed_class_id, assigned_class_ids, gender
     });
     res.status(201).json({ success: true, ...result });
   } catch (err: any) {
@@ -372,6 +384,19 @@ apiRouter.post('/users/teacher', async (req: Request, res: Response) => {
 
 // Update user details (PUT & PATCH)
 apiRouter.all(['/users/:id/update', '/users/:id/details'], async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const success = await updateUserDetails(id, req.body);
+    if (!success) {
+      return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
+    }
+    res.json({ success: true, message: 'Pengguna berhasil diperbarui' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.put('/users/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const success = await updateUserDetails(id, req.body);
@@ -424,12 +449,26 @@ apiRouter.get('/classes', async (req: Request, res: Response) => {
 // Create Class
 apiRouter.post('/classes', async (req: Request, res: Response) => {
   try {
-    const { name, grade, major, homeroom_teacher_id, bk_teacher_id } = req.body;
+    const { id, name, grade, major, homeroom_teacher_id, bk_teacher_id } = req.body;
     if (!name || !grade) {
       return res.status(400).json({ error: 'Nama kelas dan tingkat kelas wajib diisi' });
     }
-    const newClass = await createClass({ name, grade, major: major || 'Umum', homeroom_teacher_id, bk_teacher_id });
+    const newClass = await createClass({ id, name, grade, major: major || 'Umum', homeroom_teacher_id, bk_teacher_id });
     res.status(201).json(newClass);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Assign BK Teacher to multiple classes
+apiRouter.post('/classes/assign-bk', async (req: Request, res: Response) => {
+  try {
+    const { teacherId, classIds } = req.body;
+    if (!teacherId) {
+      return res.status(400).json({ error: 'teacherId wajib diisi' });
+    }
+    await assignBkClassesOnServer(teacherId, Array.isArray(classIds) ? classIds : []);
+    res.json({ success: true, message: 'Kelas binaan Guru BK berhasil diperbarui' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

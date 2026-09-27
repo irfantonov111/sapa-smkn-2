@@ -204,34 +204,41 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   const findTeacherMatch = (val: string, prefType?: 'guru_bk' | 'wali_kelas'): Teacher | undefined => {
     if (!val || val === '-' || val.trim() === '') return undefined;
     const raw = val.trim().toLowerCase();
+    const cleanDigits = raw.replace(/\D/g, '');
     const allTeachers = db.getTeachers();
     const candidates = prefType
       ? [...allTeachers.filter(t => t.teacher_type === prefType), ...allTeachers.filter(t => t.teacher_type !== prefType)]
       : allTeachers;
 
-    // 1. By NIP (exact or contained)
-    const byNip = candidates.find(t => {
-      const plainNip = decryptNip(t.nip).toLowerCase();
-      const rawNip = t.nip.toLowerCase();
-      return (plainNip && raw.includes(plainNip)) || (rawNip && raw.includes(rawNip));
-    });
-    if (byNip) return byNip;
+    // 1. By NIP (exact or contained, requires at least 5 digits to avoid false matches)
+    if (cleanDigits.length >= 5) {
+      const byNip = candidates.find(t => {
+        const plainNip = decryptNip(t.nip).replace(/\D/g, '');
+        return plainNip.length >= 5 && (plainNip === cleanDigits || raw.includes(plainNip));
+      });
+      if (byNip) return byNip;
+    }
 
     // 2. By Email
-    const byEmail = candidates.find(t => {
-      const u = db.getUserById(t.user_id);
-      return u && raw.includes(u.email.toLowerCase());
-    });
-    if (byEmail) return byEmail;
+    if (raw.includes('@')) {
+      const byEmail = candidates.find(t => {
+        const u = db.getUserById(t.user_id);
+        return u && u.email && raw.includes(u.email.toLowerCase());
+      });
+      if (byEmail) return byEmail;
+    }
 
-    // 3. By Name
-    const byName = candidates.find(t => {
-      const u = db.getUserById(t.user_id);
-      if (!u) return false;
-      const tName = u.name.toLowerCase();
-      return raw.includes(tName) || tName.includes(raw);
-    });
-    if (byName) return byName;
+    // 3. By Name (strip parenthesized NIP if present, e.g. "Drs. Ahmad (1978...)")
+    const nameOnly = raw.replace(/\([^)]*\)/g, '').trim();
+    if (nameOnly.length >= 3) {
+      const byName = candidates.find(t => {
+        const u = db.getUserById(t.user_id);
+        if (!u) return false;
+        const tName = u.name.trim().toLowerCase();
+        return tName === nameOnly || raw.includes(tName) || tName.includes(nameOnly);
+      });
+      if (byName) return byName;
+    }
 
     return undefined;
   };
@@ -564,7 +571,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const data = new Uint8Array(evt.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
@@ -573,21 +580,167 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         let bkAdded = 0;
         let waliAdded = 0;
         let kelasAdded = 0;
+        let rowSeq = 1;
 
+        // Normalize all column header keys by stripping all non-alphanumeric characters
+        // e.g. "Jenis Kelamin (L/P)" -> "jeniskelaminlp", "Wali Kelas (Nama / NIP)" -> "walikelasnamanip"
         const normRow = (raw: Record<string, any>): Record<string, string> => {
           const clean: Record<string, string> = {};
           for (const key of Object.keys(raw)) {
-            const cleanKey = key.trim().toLowerCase().replace(/[\s_-]+/g, '');
-            clean[cleanKey] = (raw[key] !== null && raw[key] !== undefined ? String(raw[key]).trim() : '');
+            const cleanKey = key.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+            const val = raw[key] !== null && raw[key] !== undefined ? String(raw[key]).trim() : '';
+            if (cleanKey && (!clean[cleanKey] || val !== '')) {
+              clean[cleanKey] = val;
+            }
           }
           return clean;
         };
 
-        // Group sheets to ensure proper order of execution:
-        // 1. Teachers (Wali Kelas & Guru BK)
-        // 2. Classes (Data Kelas)
-        // 3. Students (Siswa)
-        // 4. Fallback (Single combined / exported sheet)
+        // Smart sheet-to-json parser that detects header row even if title/blank rows precede it
+        const parseSheetRows = (worksheet: XLSX.WorkSheet): Record<string, any>[] => {
+          const matrix: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+          if (!matrix || matrix.length === 0) return [];
+
+          let headerRowIdx = 0;
+          const headerKeywords = ['nama', 'name', 'nis', 'nip', 'kelas', 'rombel', 'email', 'kelamin', 'gender', 'jk', 'peran', 'kategori'];
+          for (let i = 0; i < Math.min(10, matrix.length); i++) {
+            const rowCells = (matrix[i] || []).map(c => String(c || '').trim().toLowerCase());
+            const matchCount = rowCells.filter(cell =>
+              headerKeywords.some(kw => cell.includes(kw))
+            ).length;
+            if (matchCount >= 2) {
+              headerRowIdx = i;
+              break;
+            }
+          }
+
+          if (headerRowIdx === 0) {
+            return XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+          }
+
+          const headers = (matrix[headerRowIdx] || []).map((h, idx) => String(h || `col_${idx}`).trim());
+          const result: Record<string, any>[] = [];
+          for (let rIdx = headerRowIdx + 1; rIdx < matrix.length; rIdx++) {
+            const row = matrix[rIdx];
+            if (!row || row.every(c => String(c || '').trim() === '')) continue;
+            const obj: Record<string, any> = {};
+            headers.forEach((h, cIdx) => {
+              if (h) obj[h] = row[cIdx] ?? '';
+            });
+            result.push(obj);
+          }
+          return result;
+        };
+
+        // Helper to clean placeholder values like "-", "--", "N/A", "kosong"
+        const cleanField = (val?: string): string => {
+          if (!val) return '';
+          const v = val.trim();
+          if (v === '-' || v === '--' || v === '---' || v.toLowerCase() === 'n/a' || v.toLowerCase() === 'null' || v.toLowerCase() === 'kosong' || v.toLowerCase() === 'belum ada') {
+            return '';
+          }
+          return v;
+        };
+
+        // Accurate gender parser from Excel row + normalized row + fallback to name detection
+        const parseRowGender = (raw: Record<string, any>, r: Record<string, string>, personName: string): Gender => {
+          let rawVal =
+            r['jeniskelaminlp'] ||
+            r['jeniskelamin'] ||
+            r['kelamin'] ||
+            r['gender'] ||
+            r['jk'] ||
+            r['jklp'] ||
+            r['lp'] ||
+            r['sex'] ||
+            '';
+
+          if (!rawVal && raw) {
+            for (const k of Object.keys(raw)) {
+              const lk = k.trim().toLowerCase();
+              if (lk.includes('kelamin') || lk.includes('gender') || lk.includes('sex') || lk === 'jk' || lk === 'l/p' || lk === 'lp') {
+                const candidate = String(raw[k] ?? '').trim();
+                if (candidate) {
+                  rawVal = candidate;
+                  break;
+                }
+              }
+            }
+          }
+
+          const cleaned = cleanField(rawVal).toUpperCase();
+          if (cleaned) {
+            if (
+              cleaned === 'P' ||
+              cleaned === 'PR' ||
+              cleaned === 'W' ||
+              cleaned === 'F' ||
+              cleaned.startsWith('PEREMPUAN') ||
+              cleaned.startsWith('WANITA') ||
+              cleaned.startsWith('FEMALE') ||
+              cleaned.includes('(P)') ||
+              cleaned.includes('PEREMPUAN') ||
+              cleaned.includes('WANITA')
+            ) {
+              return 'P';
+            }
+            if (
+              cleaned === 'L' ||
+              cleaned === 'LK' ||
+              cleaned === 'M' ||
+              cleaned.startsWith('LAKI') ||
+              cleaned.startsWith('PRIA') ||
+              cleaned.startsWith('MALE') ||
+              cleaned.includes('(L)') ||
+              cleaned.includes('LAKI') ||
+              cleaned.includes('PRIA')
+            ) {
+              return 'L';
+            }
+          }
+
+          return detectGenderFromName(personName);
+        };
+
+        // Helper to find an existing teacher accurately without false-positive collisions on empty/"-" NIP or Email
+        const findExistingTeacher = (realNip: string, realEmail: string, personName: string, expectedType?: 'guru_bk' | 'wali_kelas'): Teacher | undefined => {
+          const allTeachers = db.getTeachers();
+          const cleanInputNip = realNip.replace(/\D/g, '');
+          const cleanInputEmail = realEmail.trim().toLowerCase();
+          const cleanInputName = personName.trim().toLowerCase();
+
+          // 1. Match by valid NIP (at least 5 digits)
+          if (cleanInputNip.length >= 5) {
+            const byNip = allTeachers.find(t => {
+              const tPlainNip = decryptNip(t.nip).replace(/\D/g, '');
+              return tPlainNip.length >= 5 && tPlainNip === cleanInputNip;
+            });
+            if (byNip) return byNip;
+          }
+
+          // 2. Match by valid Email
+          if (cleanInputEmail && cleanInputEmail.includes('@')) {
+            const byEmail = allTeachers.find(t => {
+              const tUser = db.getUserById(t.user_id);
+              return tUser && tUser.email.trim().toLowerCase() === cleanInputEmail;
+            });
+            if (byEmail) return byEmail;
+          }
+
+          // 3. Match by exact full name (case-insensitive)
+          if (cleanInputName.length >= 3) {
+            const byName = allTeachers.find(t => {
+              if (expectedType && t.teacher_type !== expectedType) return false;
+              const tUser = db.getUserById(t.user_id);
+              return tUser && tUser.name.trim().toLowerCase() === cleanInputName;
+            });
+            if (byName) return byName;
+          }
+
+          return undefined;
+        };
+
+        // Group sheets to ensure proper order of execution
         const sheetMap: {
           teachers: string[];
           classes: string[];
@@ -605,14 +758,20 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           if (lower.includes('petunjuk') || lower.includes('panduan') || lower.includes('guide')) {
             return;
           }
-          if (lower.includes('bk') || lower.includes('konseling') || lower.includes('wali')) {
+          if (
+            lower.includes('bk') ||
+            lower.includes('konseling') ||
+            lower.includes('wali') ||
+            lower.includes('guru') ||
+            lower.includes('pendidik') ||
+            lower.includes('pengajar') ||
+            lower.includes('teacher')
+          ) {
             sheetMap.teachers.push(sheetName);
           } else if ((lower.includes('kelas') || lower.includes('rombel')) && !lower.includes('wali')) {
             sheetMap.classes.push(sheetName);
-          } else if (lower.includes('siswa') || lower.includes('student')) {
+          } else if (lower.includes('siswa') || lower.includes('student') || lower.includes('peserta didik') || lower.includes('murid')) {
             sheetMap.students.push(sheetName);
-          } else if (lower.includes('semua') || lower.includes('pengguna') || lower.includes('user') || lower.includes('kredensial')) {
-            sheetMap.fallback.push(sheetName);
           } else {
             sheetMap.fallback.push(sheetName);
           }
@@ -621,15 +780,15 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         // Step 0: Pre-create classes from Data Kelas so class IDs and metadata exist before linking teachers
         sheetMap.classes.forEach((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
-          const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+          const rawRows = parseSheetRows(worksheet);
 
           rawRows.forEach((raw) => {
             const r = normRow(raw);
-            const className = r['namakelas'] || r['kelas'] || r['rombel'] || '';
+            const className = cleanField(r['namakelas'] || r['kelas'] || r['rombel'] || r['kelasrombel'] || '');
             if (!className) return;
 
-            const grade = r['tingkat'] || r['tingkat101112'] || r['jenjang'] || (className.includes('XI') ? '11' : className.includes('XII') ? '12' : '10');
-            const major = r['jurusan'] || r['kompetensikeahlian'] || 'Umum';
+            const grade = cleanField(r['tingkat'] || r['tingkat101112'] || r['jenjang']) || (className.toUpperCase().startsWith('XII') || className.includes('12') ? '12' : className.toUpperCase().startsWith('XI') || className.includes('11') ? '11' : '10');
+            const major = cleanField(r['jurusan'] || r['kompetensikeahlian'] || r['programkeahlian']) || 'Umum';
 
             const allCls = db.getClasses();
             const existingCls = allCls.find(c => c.name.toLowerCase() === className.toLowerCase().trim());
@@ -647,35 +806,43 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           });
         });
 
-        // Step 1: Process Teachers (Guru BK & Wali Kelas)
+        // Step 1: Process Teachers (Guru BK & Wali Kelas / Guru Wali)
         sheetMap.teachers.forEach((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
-          const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+          const rawRows = parseSheetRows(worksheet);
           const lowerSheet = sheetName.trim().toLowerCase();
 
           rawRows.forEach((raw) => {
+            rowSeq++;
             const r = normRow(raw);
-            const name = r['nama'] || r['name'] || r['namaguru'] || r['namalengkap'] || r['namalengkapgelar'] || '';
+            const name = cleanField(
+              r['nama'] ||
+              r['name'] ||
+              r['namaguru'] ||
+              r['namalengkap'] ||
+              r['namalengkapgelar'] ||
+              r['namawalikelas'] ||
+              r['namaguruwali'] ||
+              r['namagurubk'] ||
+              r['guruwali'] ||
+              r['walikelas'] ||
+              r['gurubk'] ||
+              r['namapendidik'] ||
+              ''
+            );
             if (!name) return;
 
-            const email = r['email'] || r['surel'] || r['emailresmi'] || '';
-            const nip = r['nip'] || r['nopegawai'] || '';
-            const phone = r['nohp'] || r['hp'] || r['phone'] || r['telepon'] || r['wa'] || r['noteleponwa'] || '';
-            const className = r['kelasbinaan'] || r['kelas'] || r['rombel'] || r['kelasdiampu'] || '';
-            const rawSpecialization = r['spesialisasi'] || r['bidang'] || r['keahlian'] || r['spesialisasikonseling'] || '';
-            const rawRoom = r['ruangan'] || r['ruang'] || r['lokasi'] || '';
-            const roleCol = (r['peran'] || r['role'] || r['jabatan'] || r['jenisguru'] || r['kategori'] || r['kategoriakun'] || '').toLowerCase();
+            const realEmail = cleanField(r['email'] || r['surel'] || r['emailresmi'] || r['emailakun'] || r['emailguru'] || '');
+            const realNip = cleanField(r['nip'] || r['nopegawai'] || r['nisnip'] || r['nipguru'] || r['nipwalikelas'] || r['nipgurubk'] || '');
+            const phone = cleanField(r['nohp'] || r['hp'] || r['phone'] || r['telepon'] || r['wa'] || r['noteleponwa'] || r['nomorhp'] || '');
+            const className = cleanField(r['kelasbinaan'] || r['kelas'] || r['rombel'] || r['kelasdiampu'] || r['kelasrombel'] || r['namakelas'] || '');
+            const rawSpecialization = cleanField(r['spesialisasi'] || r['bidang'] || r['keahlian'] || r['spesialisasikonseling'] || '');
+            const rawRoom = cleanField(r['ruangan'] || r['ruang'] || r['lokasi'] || '');
+            const roleCol = cleanField(r['peran'] || r['role'] || r['jabatan'] || r['jenisguru'] || r['kategori'] || r['kategoriakun'] || '').toLowerCase();
 
-            const rawGender = r['jeniskelamin'] || r['gender'] || r['jk'] || r['sex'] || r['jeniskelaminlp'] || '';
-            let gender: Gender = 'L';
-            if (rawGender) {
-              const g = rawGender.trim().toUpperCase();
-              gender = (g.startsWith('P') || g === 'WANITA' || g === 'PEREMPUAN') ? 'P' : 'L';
-            } else {
-              gender = detectGenderFromName(name);
-            }
+            const gender: Gender = parseRowGender(raw, r, name);
 
-            // Determine accurately whether this row is Guru BK or Wali Kelas
+            // Determine accurately whether this row is Guru BK or Wali Kelas (Guru Wali)
             let isBk = false;
             if (lowerSheet.includes('wali')) {
               isBk = false;
@@ -695,21 +862,17 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               isBk = false;
             }
 
-            const finalNip = nip || (isBk ? `1980${Math.floor(10000000 + Math.random() * 90000000)}` : `1985${Math.floor(10000000 + Math.random() * 90000000)}`);
-            const finalEmail = email || (isBk ? `gurubk_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id` : `walikelas_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`);
+            const expectedType: 'guru_bk' | 'wali_kelas' = isBk ? 'guru_bk' : 'wali_kelas';
+            const existingTeacher = findExistingTeacher(realNip, realEmail, name, expectedType);
 
-            const existingTeacher = db.getTeachers().find(t => {
-              const plainNip = decryptNip(t.nip).toLowerCase();
-              const tUser = db.getUserById(t.user_id);
-              const matchNip = finalNip && (t.nip === finalNip || plainNip === finalNip.toLowerCase());
-              const matchEmail = email && tUser && tUser.email.toLowerCase() === email.toLowerCase();
-              return Boolean(matchNip || matchEmail);
-            });
+            const slugName = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14) || 'guru';
+            const uniqueSeed = `${Date.now().toString().slice(-4)}${String(rowSeq).padStart(3, '0')}`;
+            const finalNip = realNip || (isBk ? `19800101201001${uniqueSeed.slice(-4)}` : `19850101201501${uniqueSeed.slice(-4)}`);
+            const finalEmail = realEmail || (isBk ? `${slugName}.bk${rowSeq}@guru.belajar.id` : `${slugName}.wali${rowSeq}@guru.belajar.id`);
 
             if (isBk) {
               const specialization = rawSpecialization || 'Konseling Pribadi, Sosial & Bullying';
               const room = rawRoom || 'Ruang BK';
-              // Parse Kelas Binaan for Guru BK (supports comma/semicolon separated list of classes)
               const bkClassNames = className
                 .split(/[,;]+/)
                 .map(s => s.trim())
@@ -719,6 +882,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               if (existingTeacher) {
                 const mergedClassIds = Array.from(new Set([...(existingTeacher.assigned_class_ids || []), ...bkClassIds]));
                 db.updateTeacher(existingTeacher.id, {
+                  nip: realNip || undefined,
                   teacher_type: 'guru_bk',
                   gender,
                   specialization: rawSpecialization || existingTeacher.specialization || specialization,
@@ -730,9 +894,11 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 }
                 db.updateUser(existingTeacher.user_id, {
                   name,
+                  email: realEmail || undefined,
                   gender,
                   phone: phone || undefined
                 });
+                bkAdded++;
               } else {
                 const createdBk = db.addTeacher({
                   name,
@@ -756,11 +922,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               // Wali Kelas (Guru Wali)
               const firstClassName = className.split(/[,;]+/)[0]?.trim() || '';
               const classId = firstClassName && firstClassName !== '-' ? resolveClassId(firstClassName) : '';
-              const specialization = rawSpecialization || `Wali Kelas ${firstClassName || ''}`.trim();
+              const specialization = rawSpecialization || (firstClassName ? `Wali Kelas ${firstClassName}` : 'Wali Kelas');
               const room = rawRoom || 'Ruang Guru Utama';
 
               if (existingTeacher) {
                 db.updateTeacher(existingTeacher.id, {
+                  nip: realNip || undefined,
                   teacher_type: 'wali_kelas',
                   gender,
                   specialization,
@@ -769,12 +936,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 });
                 db.updateUser(existingTeacher.user_id, {
                   name,
+                  email: realEmail || undefined,
                   gender,
                   phone: phone || undefined
                 });
                 if (classId) {
                   db.updateClass(classId, { homeroom_teacher_id: existingTeacher.id });
                 }
+                waliAdded++;
               } else {
                 const newT = db.addTeacher({
                   name,
@@ -785,7 +954,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   teacher_type: 'wali_kelas',
                   specialization,
                   room,
-                  managed_class_id: classId,
+                  managed_class_id: classId || undefined,
                   bio: 'Wali kelas pendamping perkembangan akademik dan perilaku siswa.',
                   available_hours: 'Senin - Jumat 07.30 - 15.00 WIB'
                 });
@@ -798,33 +967,75 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           });
         });
 
-        // Step 2: Link Teachers in Data Kelas (Wali Kelas & Guru BK columns)
+        // Step 2: Link Teachers in Data Kelas (Wali Kelas & Guru BK columns) - also auto-create Wali Kelas if listed in Data Kelas but not yet in system
         sheetMap.classes.forEach((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
-          const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+          const rawRows = parseSheetRows(worksheet);
 
           rawRows.forEach((raw) => {
+            rowSeq++;
             const r = normRow(raw);
-            const className = r['namakelas'] || r['kelas'] || r['rombel'] || '';
+            const className = cleanField(r['namakelas'] || r['kelas'] || r['rombel'] || r['kelasrombel'] || '');
             if (!className) return;
 
-            const waliVal = r['walikelas'] || r['walikelasnamanip'] || r['nipwalikelas'] || '';
-            const bkVal = r['gurubk'] || r['gurubknamanip'] || r['nipgurubk'] || '';
-
-            const matchedWali = findTeacherMatch(waliVal, 'wali_kelas');
-            const matchedBk = findTeacherMatch(bkVal, 'guru_bk');
+            const waliVal = cleanField(r['walikelas'] || r['walikelasnamanip'] || r['nipwalikelas'] || r['namawalikelas'] || r['guruwali'] || '');
+            const bkVal = cleanField(r['gurubk'] || r['gurubknamanip'] || r['nipgurubk'] || r['namagurubk'] || '');
 
             const allCls = db.getClasses();
             const existingCls = allCls.find(c => c.name.toLowerCase() === className.toLowerCase().trim());
+            if (!existingCls) return;
 
-            if (existingCls) {
-              db.updateClass(existingCls.id, {
-                homeroom_teacher_id: matchedWali ? matchedWali.id : existingCls.homeroom_teacher_id,
-                bk_teacher_id: matchedBk ? matchedBk.id : existingCls.bk_teacher_id
-              });
-              if (matchedWali) {
-                db.updateTeacher(matchedWali.id, { managed_class_id: existingCls.id });
+            let matchedWali = findTeacherMatch(waliVal, 'wali_kelas');
+            if (!matchedWali && waliVal && waliVal.length >= 3) {
+              // Extract name & optional NIP from format "Nama Guru (1985...)"
+              const nipMatch = waliVal.match(/\((\d{5,})\)/);
+              const extractedNip = nipMatch ? nipMatch[1] : '';
+              const extractedName = waliVal.replace(/\([^)]*\)/g, '').trim();
+              if (extractedName) {
+                const slug = extractedName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14) || 'wali';
+                const createdWali = db.addTeacher({
+                  name: extractedName,
+                  email: `${slug}.wali${rowSeq}@guru.belajar.id`,
+                  nip: extractedNip || `19850101201502${String(rowSeq).padStart(4, '0')}`,
+                  gender: detectGenderFromName(extractedName),
+                  teacher_type: 'wali_kelas',
+                  specialization: `Wali Kelas ${existingCls.name}`,
+                  room: 'Ruang Guru Utama',
+                  managed_class_id: existingCls.id
+                });
+                matchedWali = createdWali.teacher;
+                waliAdded++;
               }
+            }
+
+            let matchedBk = findTeacherMatch(bkVal, 'guru_bk');
+            if (!matchedBk && bkVal && bkVal.length >= 3) {
+              const nipMatch = bkVal.match(/\((\d{5,})\)/);
+              const extractedNip = nipMatch ? nipMatch[1] : '';
+              const extractedName = bkVal.replace(/\([^)]*\)/g, '').trim();
+              if (extractedName) {
+                const slug = extractedName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14) || 'bk';
+                const createdBk = db.addTeacher({
+                  name: extractedName,
+                  email: `${slug}.bk${rowSeq}@guru.belajar.id`,
+                  nip: extractedNip || `19800101201002${String(rowSeq).padStart(4, '0')}`,
+                  gender: detectGenderFromName(extractedName),
+                  teacher_type: 'guru_bk',
+                  specialization: 'Konseling Pribadi, Sosial & Bullying',
+                  room: 'Ruang BK',
+                  assigned_class_ids: [existingCls.id]
+                });
+                matchedBk = createdBk.teacher;
+                bkAdded++;
+              }
+            }
+
+            db.updateClass(existingCls.id, {
+              homeroom_teacher_id: matchedWali ? matchedWali.id : existingCls.homeroom_teacher_id,
+              bk_teacher_id: matchedBk ? matchedBk.id : existingCls.bk_teacher_id
+            });
+            if (matchedWali) {
+              db.updateTeacher(matchedWali.id, { managed_class_id: existingCls.id });
             }
           });
         });
@@ -832,43 +1043,41 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         // Step 3: Process Students (Siswa)
         sheetMap.students.forEach((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
-          const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+          const rawRows = parseSheetRows(worksheet);
 
           rawRows.forEach((raw) => {
+            rowSeq++;
             const r = normRow(raw);
-            const name = r['nama'] || r['name'] || r['namasiswa'] || r['namalengkapsiswa'] || '';
+            const name = cleanField(r['nama'] || r['name'] || r['namasiswa'] || r['namalengkapsiswa'] || r['namalengkap'] || '');
             if (!name) return;
 
-            const email = r['email'] || r['surel'] || r['emailsiswa'] || '';
-            const nis = r['nis'] || r['noinduk'] || r['nisn'] || r['usernameloginnis'] || '';
-            const phone = r['nohp'] || r['hp'] || r['phone'] || r['telepon'] || r['wa'] || r['noteleponwa'] || '';
-            const className = r['kelas'] || r['rombel'] || r['class'] || '';
+            const realEmail = cleanField(r['email'] || r['surel'] || r['emailsiswa'] || '');
+            const realNis = cleanField(r['nis'] || r['noinduk'] || r['nisn'] || r['usernameloginnis'] || r['nisnip'] || '');
+            const phone = cleanField(r['nohp'] || r['hp'] || r['phone'] || r['telepon'] || r['wa'] || r['noteleponwa'] || '');
+            const className = cleanField(r['kelas'] || r['rombel'] || r['class'] || r['namakelas'] || r['kelasrombel'] || '');
 
-            const rawGender = r['jeniskelamin'] || r['gender'] || r['jk'] || r['sex'] || r['jeniskelaminlp'] || '';
-            let gender: Gender = 'L';
-            if (rawGender) {
-              const g = rawGender.trim().toUpperCase();
-              gender = (g.startsWith('P') || g === 'WANITA' || g === 'PEREMPUAN') ? 'P' : 'L';
-            } else {
-              gender = detectGenderFromName(name);
-            }
+            const gender: Gender = parseRowGender(raw, r, name);
 
-            const finalNis = nis || `2425${Math.floor(1000 + Math.random() * 9000)}`;
-            const finalEmail = email || `${finalNis}@siswa.belajar.id`;
+            const finalNis = realNis || `2425${String(1000 + rowSeq).slice(-4)}`;
+            const finalEmail = realEmail || `${finalNis}@siswa.belajar.id`;
             const classId = resolveClassId(className);
 
             const allStudents = db.getStudents();
             const allUsers = db.getUsers();
-            const existingUser = allUsers.find(u => u.email.toLowerCase() === finalEmail.toLowerCase());
-            const existingStudent = allStudents.find(s => s.nis === finalNis);
+            const existingStudent = realNis ? allStudents.find(s => s.nis === realNis) : undefined;
+            const existingUser = realEmail ? allUsers.find(u => u.email.toLowerCase() === realEmail.toLowerCase()) : undefined;
 
             if (existingStudent || existingUser) {
               const studentToUpdate = existingStudent || allStudents.find(s => s.user_id === existingUser?.id);
               if (studentToUpdate) {
-                db.updateStudent(studentToUpdate.id, { class_id: classId, gender });
-                if (phone) {
-                  db.updateUser(studentToUpdate.user_id, { phone });
-                }
+                db.updateStudent(studentToUpdate.id, { class_id: classId, gender, nis: finalNis });
+                db.updateUser(studentToUpdate.user_id, {
+                  name,
+                  gender,
+                  email: realEmail || undefined,
+                  phone: phone || undefined
+                });
+                siswaAdded++;
               }
             } else {
               db.addStudent({
@@ -884,57 +1093,54 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           });
         });
 
-        // Step 4: Fallback for single combined sheet or general export sheet
-        if (siswaAdded === 0 && bkAdded === 0 && waliAdded === 0 && sheetMap.fallback.length > 0) {
+        // Step 4: Fallback for single combined sheet or custom-named sheet
+        const hasDedicatedSheets = sheetMap.teachers.length > 0 || sheetMap.students.length > 0;
+        if (sheetMap.fallback.length > 0) {
           sheetMap.fallback.forEach((sheetName) => {
+            const lowerName = sheetName.trim().toLowerCase();
+            // Skip summary export sheets if dedicated sheets were already processed
+            if (hasDedicatedSheets && (lowerName.includes('semua') || lowerName.includes('kredensial') || lowerName.includes('admin'))) {
+              return;
+            }
             const worksheet = workbook.Sheets[sheetName];
-            const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet);
+            const rawRows = parseSheetRows(worksheet);
 
             rawRows.forEach((raw) => {
+              rowSeq++;
               const r = normRow(raw);
-              const name = r['nama'] || r['namalengkap'] || r['name'] || '';
+              const name = cleanField(r['nama'] || r['namalengkap'] || r['name'] || r['namaguru'] || r['namasiswa'] || r['namawalikelas'] || '');
               if (!name) return;
 
-              const role = (r['kategoriakun'] || r['role'] || r['kategori'] || '').toLowerCase();
-              const email = r['email'] || r['surel'] || '';
-              const nisNip = r['nisnip'] || r['nis'] || r['nip'] || '';
-              const className = r['kelas'] || r['kelasrombel'] || r['rombel'] || '';
-              const phone = r['noteleponwa'] || r['nohp'] || r['telepon'] || '';
+              const role = cleanField(r['kategoriakun'] || r['peran'] || r['role'] || r['kategori'] || r['jabatan'] || '').toLowerCase();
+              const realEmail = cleanField(r['email'] || r['surel'] || '');
+              const nisNip = cleanField(r['nisnip'] || r['nis'] || r['nip'] || '');
+              const className = cleanField(r['kelas'] || r['kelasrombel'] || r['rombel'] || r['kelasbinaan'] || '');
+              const phone = cleanField(r['noteleponwa'] || r['nohp'] || r['telepon'] || '');
+              const gender: Gender = parseRowGender(raw, r, name);
 
-              const rawGender = r['jeniskelamin'] || r['gender'] || '';
-              const gender: Gender = (rawGender.toUpperCase().startsWith('P') || rawGender.toUpperCase().includes('PEREMPUAN')) ? 'P' : 'L';
+              const hasNipCol = Boolean(r['nip'] || r['kelasbinaan']);
+              const isWaliRow = role.includes('wali') || (!role && hasNipCol && !r['spesialisasi']);
+              const isBkRow = role.includes('bk') || role.includes('konseling') || (!role && hasNipCol && Boolean(r['spesialisasi']));
 
-              if (role.includes('siswa') || (!role.includes('guru') && !role.includes('admin') && nisNip.length <= 10)) {
-                const finalNis = nisNip || `2425${Math.floor(1000 + Math.random() * 9000)}`;
-                const finalEmail = email || `${finalNis}@siswa.belajar.id`;
-                const classId = resolveClassId(className);
-
-                const existingStudent = db.getStudents().find(s => s.nis === finalNis);
-                if (!existingStudent) {
-                  db.addStudent({
-                    name,
-                    email: finalEmail,
-                    nis: finalNis,
-                    class_id: classId,
-                    gender,
-                    phone
-                  });
-                  siswaAdded++;
-                }
-              } else if (role.includes('bk')) {
-                const finalNip = nisNip || `1980${Math.floor(10000000 + Math.random() * 90000000)}`;
+              if (isBkRow) {
+                const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14) || 'bk';
+                const finalNip = nisNip || `19800101201003${String(rowSeq).padStart(4, '0')}`;
+                const finalEmail = realEmail || `${slug}.bk${rowSeq}@guru.belajar.id`;
                 const bkClassNames = className
                   .split(/[,;]+/)
                   .map(s => s.trim())
                   .filter(s => s.length > 0 && s !== '-' && !s.toLowerCase().includes('semua kelas'));
                 const bkClassIds = bkClassNames.map(cn => resolveClassId(cn)).filter(Boolean);
-                const existingTeacher = db.getTeachers().find(
-                  t => t.nip === finalNip || decryptNip(t.nip).toLowerCase() === finalNip.toLowerCase()
-                );
-                if (!existingTeacher) {
+                const existingTeacher = findExistingTeacher(nisNip, realEmail, name, 'guru_bk');
+                if (existingTeacher) {
+                  const mergedClassIds = Array.from(new Set([...(existingTeacher.assigned_class_ids || []), ...bkClassIds]));
+                  db.updateTeacher(existingTeacher.id, { gender, teacher_type: 'guru_bk', assigned_class_ids: mergedClassIds });
+                  db.updateUser(existingTeacher.user_id, { name, gender, phone: phone || undefined });
+                  if (bkClassIds.length > 0) db.assignBkClasses(existingTeacher.id, mergedClassIds);
+                } else {
                   const createdBk = db.addTeacher({
                     name,
-                    email: email || `gurubk_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`,
+                    email: finalEmail,
                     nip: finalNip,
                     gender,
                     phone,
@@ -948,39 +1154,65 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   if (bkClassIds.length > 0 && createdBk?.teacher) {
                     db.assignBkClasses(createdBk.teacher.id, bkClassIds);
                   }
-                  bkAdded++;
                 }
-              } else if (role.includes('wali')) {
-                const finalNip = nisNip || `1985${Math.floor(10000000 + Math.random() * 90000000)}`;
+                bkAdded++;
+              } else if (isWaliRow) {
+                const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14) || 'wali';
+                const finalNip = nisNip || `19850101201503${String(rowSeq).padStart(4, '0')}`;
+                const finalEmail = realEmail || `${slug}.wali${rowSeq}@guru.belajar.id`;
                 const firstClassName = className.split(/[,;]+/)[0]?.trim() || '';
                 const classId = firstClassName && firstClassName !== '-' ? resolveClassId(firstClassName) : '';
-                const existingTeacher = db.getTeachers().find(
-                  t => t.nip === finalNip || decryptNip(t.nip).toLowerCase() === finalNip.toLowerCase()
-                );
-                if (!existingTeacher) {
+                const existingTeacher = findExistingTeacher(nisNip, realEmail, name, 'wali_kelas');
+                if (existingTeacher) {
+                  db.updateTeacher(existingTeacher.id, { gender, teacher_type: 'wali_kelas', managed_class_id: classId || existingTeacher.managed_class_id });
+                  db.updateUser(existingTeacher.user_id, { name, gender, phone: phone || undefined });
+                  if (classId) db.updateClass(classId, { homeroom_teacher_id: existingTeacher.id });
+                } else {
                   const newT = db.addTeacher({
                     name,
-                    email: email || `walikelas_${Math.floor(100 + Math.random() * 900)}@guru.belajar.id`,
+                    email: finalEmail,
                     nip: finalNip,
                     gender,
                     phone,
                     teacher_type: 'wali_kelas',
-                    specialization: `Wali Kelas ${firstClassName}`,
+                    specialization: firstClassName ? `Wali Kelas ${firstClassName}` : 'Wali Kelas',
                     room: 'Ruang Guru',
-                    managed_class_id: classId,
+                    managed_class_id: classId || undefined,
                     bio: 'Wali Kelas Pendamping',
                     available_hours: 'Senin - Jumat'
                   });
                   if (classId && newT?.teacher) {
                     db.updateClass(classId, { homeroom_teacher_id: newT.teacher.id });
                   }
-                  waliAdded++;
                 }
+                waliAdded++;
+              } else if (role.includes('siswa') || (!role.includes('admin') && (!nisNip || nisNip.length <= 12))) {
+                const finalNis = nisNip || `2425${String(1000 + rowSeq).slice(-4)}`;
+                const finalEmail = realEmail || `${finalNis}@siswa.belajar.id`;
+                const classId = resolveClassId(className);
+
+                const existingStudent = nisNip ? db.getStudents().find(s => s.nis === finalNis) : undefined;
+                if (existingStudent) {
+                  db.updateStudent(existingStudent.id, { class_id: classId, gender });
+                  db.updateUser(existingStudent.user_id, { name, gender, phone: phone || undefined });
+                } else {
+                  db.addStudent({
+                    name,
+                    email: finalEmail,
+                    nis: finalNis,
+                    class_id: classId,
+                    gender,
+                    phone
+                  });
+                }
+                siswaAdded++;
               }
             });
           });
         }
 
+        // Push full synchronized state to server before triggering refresh so server memoryStore has all imported records
+        await db.pushStateToServer();
         onRefresh();
         setImportSummary({
           show: true,
@@ -1048,7 +1280,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     const student = students.find(s => s.user_id === u.id);
     const teacher = teachers.find(t => t.user_id === u.id);
     const managedCls = teacher?.teacher_type === 'wali_kelas'
-      ? classes.find(c => c.homeroom_teacher_id === teacher.id)
+      ? classes.find(c => c.homeroom_teacher_id === teacher.id || c.homeroom_teacher_id === teacher.user_id || c.id === teacher.managed_class_id)
       : undefined;
     const studentCls = student ? classes.find(c => c.id === student.class_id) : undefined;
 
@@ -1131,14 +1363,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         // Update managed class if wali_kelas
         if (teacher.teacher_type === 'wali_kelas') {
           classes.forEach(c => {
-            if (c.homeroom_teacher_id === teacher.id && c.id !== editFormData.managed_class_id) {
-              c.homeroom_teacher_id = '';
+            if ((c.homeroom_teacher_id === teacher.id || c.homeroom_teacher_id === teacher.user_id) && c.id !== editFormData.managed_class_id) {
+              db.updateClass(c.id, { homeroom_teacher_id: null });
             }
           });
           if (editFormData.managed_class_id) {
-            const cls = classes.find(c => c.id === editFormData.managed_class_id);
-            if (cls) cls.homeroom_teacher_id = teacher.id;
+            db.updateClass(editFormData.managed_class_id, { homeroom_teacher_id: teacher.id });
           }
+          db.updateTeacher(teacher.id, { managed_class_id: editFormData.managed_class_id || undefined });
         }
       }
     }
@@ -1170,13 +1402,45 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     }
   };
 
+  // Synchronized role counts directly from the users & teachers dataset
+  // so that filter button counts, status summary badges, and table rows are 100% in sync.
+  const roleCounts = useMemo(() => {
+    let siswa = 0;
+    let guru_bk = 0;
+    let wali_kelas = 0;
+    let admin = 0;
+
+    users.forEach((u) => {
+      if (u.role === 'siswa') {
+        siswa++;
+      } else if (u.role === 'admin') {
+        admin++;
+      } else if (u.role === 'guru') {
+        const teacher = teachers.find(t => t.user_id === u.id);
+        if (teacher?.teacher_type === 'guru_bk') {
+          guru_bk++;
+        } else {
+          wali_kelas++;
+        }
+      }
+    });
+
+    return {
+      all: users.length,
+      siswa,
+      guru_bk,
+      wali_kelas,
+      admin
+    };
+  }, [users, teachers]);
+
   // Filtered list
   const filteredUsers = users.filter((u) => {
     const teacher = teachers.find(t => t.user_id === u.id);
     if (roleFilter === 'siswa') return u.role === 'siswa';
     if (roleFilter === 'admin') return u.role === 'admin';
     if (roleFilter === 'guru_bk') return u.role === 'guru' && teacher?.teacher_type === 'guru_bk';
-    if (roleFilter === 'wali_kelas') return u.role === 'guru' && teacher?.teacher_type === 'wali_kelas';
+    if (roleFilter === 'wali_kelas') return u.role === 'guru' && (teacher?.teacher_type === 'wali_kelas' || !teacher?.teacher_type);
 
     return true;
   }).filter((u) => {
@@ -1514,13 +1778,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               setRoleFilter('all');
               setCurrentPage(1);
             }}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
               roleFilter === 'all'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Semua ({users.length})
+            Semua ({roleCounts.all})
           </button>
 
           <button
@@ -1529,14 +1793,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               setRoleFilter('guru_bk');
               setCurrentPage(1);
             }}
-            className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
               roleFilter === 'guru_bk'
                 ? 'bg-purple-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-purple-700'
             }`}
           >
             <Shield className="w-3 h-3" />
-            <span>Guru BK ({teachers.filter(t => t.teacher_type === 'guru_bk').length})</span>
+            <span>Guru BK ({roleCounts.guru_bk})</span>
           </button>
 
           <button
@@ -1545,14 +1809,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               setRoleFilter('wali_kelas');
               setCurrentPage(1);
             }}
-            className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
               roleFilter === 'wali_kelas'
                 ? 'bg-teal-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-teal-700'
             }`}
           >
             <UserCheck className="w-3 h-3" />
-            <span>Wali Kelas ({teachers.filter(t => t.teacher_type === 'wali_kelas').length})</span>
+            <span>Wali Kelas ({roleCounts.wali_kelas})</span>
           </button>
 
           <button
@@ -1561,28 +1825,29 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               setRoleFilter('siswa');
               setCurrentPage(1);
             }}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
               roleFilter === 'siswa'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-blue-700'
             }`}
           >
-            Siswa ({students.length})
+            Siswa ({roleCounts.siswa})
           </button>
 
           <button
             type="button"
             onClick={() => {
               setRoleFilter('admin');
+              if (classFilter !== 'all') setClassFilter('all');
               setCurrentPage(1);
             }}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
               roleFilter === 'admin'
                 ? 'bg-slate-800 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Admin ({users.filter(u => u.role === 'admin').length})
+            Admin ({roleCounts.admin})
           </button>
         </div>
 
@@ -1736,16 +2001,46 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         </div>
       )}
 
+      {/* Synchronized Data Count Status Bar above Table */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-slate-700">
+          <span className="font-bold text-slate-900">
+            Status Jumlah Data Tabel:
+          </span>
+          <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-slate-800">
+            Ditampilkan: {sortedUsers.length} baris
+          </span>
+          <span className="text-slate-300 hidden sm:inline">|</span>
+          <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
+            Siswa: {roleCounts.siswa}
+          </span>
+          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 font-semibold">
+            Guru BK: {roleCounts.guru_bk}
+          </span>
+          <span className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200 font-semibold">
+            Wali Kelas: {roleCounts.wali_kelas}
+          </span>
+          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-300 font-semibold">
+            Admin: {roleCounts.admin}
+          </span>
+        </div>
+        <div className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Data Tabel & Filter Sinkron ({roleCounts.all} Total Pengguna)</span>
+        </div>
+      </div>
+
       {/* Users Table wrapped in Responsive Container with sticky header */}
       <ResponsiveTableContainer
         tableId="admin-users-table"
-        minWidth="840px"
+        minWidth="880px"
         maxHeight="600px"
         hasData={paginatedUsers.length > 0}
       >
         <table className="w-full text-left border-collapse text-xs">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[11px]">
+              <th className="p-3.5 w-12 text-center">No</th>
               <th className="p-3.5 w-10 text-center">
                 <input
                   type="checkbox"
@@ -1769,18 +2064,23 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           <tbody className="divide-y divide-slate-100 text-slate-700">
             {paginatedUsers.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-slate-400">
+                <td colSpan={8} className="p-8 text-center text-slate-400">
                   Tidak ada data pengguna yang sesuai dengan filter atau pencarian saat ini.
                 </td>
               </tr>
             ) : (
-              paginatedUsers.map((u) => {
+              paginatedUsers.map((u, idx) => {
+                const rowNumber = (pageSize === 'all' ? 0 : (currentPage - 1) * pageSize) + idx + 1;
                 const student = students.find(s => s.user_id === u.id);
                 const teacher = teachers.find(t => t.user_id === u.id);
                 const cls = student ? classes.find(c => c.id === student.class_id) : undefined;
                 const managedCls = teacher?.teacher_type === 'wali_kelas'
-                  ? classes.find(c => c.homeroom_teacher_id === teacher.id)
+                  ? classes.find(c => c.homeroom_teacher_id === teacher.id || c.homeroom_teacher_id === teacher.user_id || c.id === teacher.managed_class_id)
                   : undefined;
+                const bkAssignedClasses = teacher?.teacher_type === 'guru_bk'
+                  ? classes.filter(c => teacher.assigned_class_ids?.includes(c.id) || c.bk_teacher_id === teacher.id || c.bk_teacher_id === teacher.user_id)
+                  : [];
+                const effectiveGender: Gender = u.gender || student?.gender || teacher?.gender || detectGenderFromName(u.name);
                 const isSelected = selectedUserIds.includes(u.id);
 
                 return (
@@ -1792,6 +2092,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                         : 'hover:bg-slate-50/70'
                     }`}
                   >
+                    <td className="p-3.5 text-center font-bold text-slate-400">
+                      {rowNumber}
+                    </td>
+
                     <td className="p-3.5 text-center">
                       <input
                         type="checkbox"
@@ -1808,7 +2112,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     <td className="p-3.5">
                       <div className="flex items-center gap-3">
                         <img
-                          src={u.avatar || getDefaultAvatarByGender(u.role, u.gender || student?.gender || teacher?.gender)}
+                          src={getDefaultAvatarByGender(u.role, effectiveGender)}
                           alt={u.name}
                           className="w-9 h-9 rounded-full object-cover border border-slate-200 bg-slate-100 shrink-0"
                         />
@@ -1817,17 +2121,17 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                             <p className="font-bold text-slate-900">{u.name}</p>
                             <span
                               className={`text-[9px] font-black px-1.5 py-0.5 rounded-sm ${
-                                (u.gender === 'P' || student?.gender === 'P' || teacher?.gender === 'P')
+                                effectiveGender === 'P'
                                   ? 'bg-pink-100 text-pink-700 border border-pink-200'
                                   : 'bg-blue-100 text-blue-700 border border-blue-200'
                               }`}
                               title={
-                                (u.gender === 'P' || student?.gender === 'P' || teacher?.gender === 'P')
+                                effectiveGender === 'P'
                                   ? 'Jenis Kelamin: Perempuan (P)'
                                   : 'Jenis Kelamin: Laki-laki (L)'
                               }
                             >
-                              {(u.gender === 'P' || student?.gender === 'P' || teacher?.gender === 'P') ? 'P' : 'L'}
+                              {effectiveGender === 'P' ? 'P' : 'L'}
                             </span>
                           </div>
                           {student && <span className="text-[11px] text-slate-500 font-mono">NIS: {student.nis}</span>}
@@ -1869,24 +2173,25 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           Kelas {cls?.name || '-'}
                         </span>
                       )}
-                      {teacher && managedCls && (
-                        <span className="font-medium text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md">
-                          Wali Kelas {managedCls.name}
-                        </span>
+                      {teacher && teacher.teacher_type === 'wali_kelas' && (
+                        managedCls ? (
+                          <span className="font-medium text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md">
+                            Wali Kelas {managedCls.name}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">Belum ditugaskan ke kelas</span>
+                        )
                       )}
                       {teacher && teacher.teacher_type === 'guru_bk' && (
                         <div className="space-y-1">
                           <p className="text-slate-600 truncate max-w-xs">{teacher.specialization || 'Guru BK Konseling'}</p>
-                          {teacher.assigned_class_ids && teacher.assigned_class_ids.length > 0 ? (
+                          {bkAssignedClasses.length > 0 ? (
                             <div className="flex flex-wrap gap-1 mt-0.5">
-                              {teacher.assigned_class_ids.map(cid => {
-                                const c = classes.find(clsObj => clsObj.id === cid);
-                                return (
-                                  <span key={cid} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 text-[10px] font-bold border border-purple-200">
-                                    {c?.name || cid}
-                                  </span>
-                                );
-                              })}
+                              {bkAssignedClasses.map(c => (
+                                <span key={c.id} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 text-[10px] font-bold border border-purple-200">
+                                  {c.name}
+                                </span>
+                              ))}
                             </div>
                           ) : (
                             <span className="text-[10px] text-slate-400 italic">Belum ada kelas binaan</span>

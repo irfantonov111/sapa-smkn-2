@@ -1693,6 +1693,8 @@ export async function getBkTeachers(): Promise<BkTeacherProfile[]> {
 // ==========================================
 
 export async function createStudent(data: {
+  id?: string;
+  user_id?: string;
   name: string;
   email: string;
   nis: string;
@@ -1701,11 +1703,13 @@ export async function createStudent(data: {
   password?: string;
   phone?: string;
 }): Promise<{ user: User; student: Student }> {
-  const userId = `usr-s-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const studentId = `std-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const userId = data.user_id || `usr-s-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const studentId = data.id || `std-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const defaultPass = data.password || `siswa${data.nis.slice(-4)}`;
   const hashedPassword = hashPassword(defaultPass);
-  const detectedGender: Gender = data.gender || (data.name.toLowerCase().match(/\b(siti|nur|dewi|putri|ayu|anisa|rahma|ratih|fitri|anita|wulandari|sari|wahyuni|dian|indah)\b/) ? 'P' : 'L');
+  const detectedGender: Gender = data.gender === 'P' || data.gender === 'L'
+    ? data.gender
+    : (data.name.toLowerCase().match(/\b(siti|nur|dewi|putri|ayu|anisa|rahma|ratih|fitri|anita|wulandari|sari|wahyuni|dian|indah)\b/) ? 'P' : 'L');
 
   const newUser: User = {
     id: userId,
@@ -1730,28 +1734,45 @@ export async function createStudent(data: {
   };
 
   if (isPostgresConnected && pool) {
-    await pool.query(
-      `INSERT INTO users (id, name, email, password, role, gender, avatar, phone, password_changed, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
-       ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, gender = $6, phone = $8`,
-      [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.gender, newUser.avatar, newUser.phone, newUser.password_changed]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO users (id, name, email, password, role, gender, avatar, phone, password_changed, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, gender = $6, avatar = $7, phone = $8`,
+        [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.gender, newUser.avatar, newUser.phone, newUser.password_changed]
+      );
 
-    await pool.query(
-      `INSERT INTO students (id, user_id, nis, gender, class_id, created_at)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-       ON CONFLICT (id) DO UPDATE SET nis = $3, gender = $4, class_id = $5`,
-      [newStudent.id, newStudent.user_id, newStudent.nis, newStudent.gender, newStudent.class_id]
-    );
+      await pool.query(
+        `INSERT INTO students (id, user_id, nis, gender, class_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO UPDATE SET nis = $3, gender = $4, class_id = $5`,
+        [newStudent.id, newStudent.user_id, newStudent.nis, newStudent.gender, newStudent.class_id]
+      );
+    } catch (err) {
+      console.warn('[ADVOCARE DB] Postgres createStudent warning:', err);
+    }
   }
 
-  memoryStore.users.push(newUser);
-  memoryStore.students.push(newStudent);
+  const existingUserIdx = memoryStore.users.findIndex(u => u.id === newUser.id || u.email.toLowerCase() === newUser.email.toLowerCase());
+  if (existingUserIdx >= 0) {
+    memoryStore.users[existingUserIdx] = { ...memoryStore.users[existingUserIdx], ...newUser };
+  } else {
+    memoryStore.users.push(newUser);
+  }
+
+  const existingStdIdx = memoryStore.students.findIndex(s => s.id === newStudent.id || s.nis === newStudent.nis || s.user_id === newUser.id);
+  if (existingStdIdx >= 0) {
+    memoryStore.students[existingStdIdx] = { ...memoryStore.students[existingStdIdx], ...newStudent };
+  } else {
+    memoryStore.students.push(newStudent);
+  }
 
   return { user: newUser, student: newStudent };
 }
 
 export async function createTeacher(data: {
+  id?: string;
+  user_id?: string;
   name: string;
   email: string;
   nip: string;
@@ -1765,10 +1786,12 @@ export async function createTeacher(data: {
   managed_class_id?: string;
   assigned_class_ids?: string[];
 }): Promise<{ user: User; teacher: Teacher }> {
-  const userId = `usr-t-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const teacherId = `tch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const userId = data.user_id || `usr-t-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const teacherId = data.id || `tch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const hashedPassword = hashPassword('guru123');
-  const detectedGender: Gender = data.gender || (data.name.toLowerCase().match(/\b(siti|nur|dewi|putri|ayu|anisa|rahma|ratih|fitri|anita|wulandari|sari|wahyuni|dian|indah|rina|ratna|kartika|sulastri)\b/) ? 'P' : 'L');
+  const detectedGender: Gender = data.gender === 'P' || data.gender === 'L'
+    ? data.gender
+    : (data.name.toLowerCase().match(/\b(siti|nur|dewi|putri|ayu|anisa|rahma|ratih|fitri|anita|wulandari|sari|wahyuni|dian|indah|rina|ratna|kartika|sulastri)\b/) ? 'P' : 'L');
 
   const newUser: User = {
     id: userId,
@@ -1794,47 +1817,76 @@ export async function createTeacher(data: {
     bio: data.bio || 'Pendidik siap mendampingi siswa.',
     available_hours: data.available_hours || 'Senin - Jumat 07.30 - 15.00 WIB',
     is_active: true,
+    managed_class_id: data.teacher_type === 'wali_kelas' ? data.managed_class_id : undefined,
     assigned_class_ids: data.assigned_class_ids || [],
     created_at: new Date().toISOString()
   };
 
   if (isPostgresConnected && pool) {
-    await pool.query(
-      `INSERT INTO users (id, name, email, password, role, avatar, phone, password_changed, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
-       ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, phone = $7`,
-      [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.avatar, newUser.phone, newUser.password_changed]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO users (id, name, email, password, role, gender, avatar, phone, password_changed, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO UPDATE SET name = $2, email = $3, password = $4, gender = $6, avatar = $7, phone = $8`,
+        [newUser.id, newUser.name, newUser.email, newUser.password, newUser.role, newUser.gender, newUser.avatar, newUser.phone, newUser.password_changed]
+      );
 
-    await pool.query(
-      `INSERT INTO teachers (id, user_id, nip, teacher_type, specialization, room, bio, available_hours, is_active, assigned_class_ids, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
-       ON CONFLICT (id) DO UPDATE SET nip = $3, teacher_type = $4, specialization = $5, room = $6, bio = $7, available_hours = $8, assigned_class_ids = $10`,
-      [
-        newTeacher.id,
-        newTeacher.user_id,
-        newTeacher.nip,
-        newTeacher.teacher_type,
-        newTeacher.specialization,
-        newTeacher.room,
-        newTeacher.bio,
-        newTeacher.available_hours,
-        newTeacher.is_active,
-        JSON.stringify(newTeacher.assigned_class_ids)
-      ]
-    );
+      await pool.query(
+        `INSERT INTO teachers (id, user_id, nip, teacher_type, gender, specialization, room, bio, available_hours, is_active, assigned_class_ids, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO UPDATE SET nip = $3, teacher_type = $4, gender = $5, specialization = $6, room = $7, bio = $8, available_hours = $9, assigned_class_ids = $11`,
+        [
+          newTeacher.id,
+          newTeacher.user_id,
+          newTeacher.nip,
+          newTeacher.teacher_type,
+          newTeacher.gender,
+          newTeacher.specialization,
+          newTeacher.room,
+          newTeacher.bio,
+          newTeacher.available_hours,
+          newTeacher.is_active,
+          JSON.stringify(newTeacher.assigned_class_ids)
+        ]
+      );
 
-    if (data.teacher_type === 'wali_kelas' && data.managed_class_id) {
-      await pool.query('UPDATE classes SET homeroom_teacher_id = $1 WHERE id = $2', [newTeacher.id, data.managed_class_id]);
+      if (data.teacher_type === 'wali_kelas' && data.managed_class_id) {
+        await pool.query('UPDATE classes SET homeroom_teacher_id = $1 WHERE id = $2', [newTeacher.id, data.managed_class_id]);
+      }
+      if (data.teacher_type === 'guru_bk' && Array.isArray(data.assigned_class_ids) && data.assigned_class_ids.length > 0) {
+        await pool.query('UPDATE classes SET bk_teacher_id = $1 WHERE id = ANY($2)', [newTeacher.id, data.assigned_class_ids]);
+      }
+    } catch (err) {
+      console.warn('[ADVOCARE DB] Postgres createTeacher warning:', err);
     }
   }
 
-  memoryStore.users.push(newUser);
-  memoryStore.teachers.push(newTeacher);
+  const existingUserIdx = memoryStore.users.findIndex(u => u.id === newUser.id || u.email.toLowerCase() === newUser.email.toLowerCase());
+  if (existingUserIdx >= 0) {
+    memoryStore.users[existingUserIdx] = { ...memoryStore.users[existingUserIdx], ...newUser };
+  } else {
+    memoryStore.users.push(newUser);
+  }
+
+  const existingTchIdx = memoryStore.teachers.findIndex(t => t.id === newTeacher.id || t.user_id === newUser.id);
+  if (existingTchIdx >= 0) {
+    memoryStore.teachers[existingTchIdx] = { ...memoryStore.teachers[existingTchIdx], ...newTeacher };
+  } else {
+    memoryStore.teachers.push(newTeacher);
+  }
 
   if (data.teacher_type === 'wali_kelas' && data.managed_class_id) {
     const cls = memoryStore.classes.find(c => c.id === data.managed_class_id);
     if (cls) cls.homeroom_teacher_id = newTeacher.id;
+  }
+
+  if (data.teacher_type === 'guru_bk' && Array.isArray(data.assigned_class_ids) && data.assigned_class_ids.length > 0) {
+    const assignedSet = new Set(data.assigned_class_ids);
+    memoryStore.classes.forEach(c => {
+      if (assignedSet.has(c.id)) {
+        c.bk_teacher_id = newTeacher.id;
+      }
+    });
   }
 
   return { user: newUser, teacher: newTeacher };
@@ -1844,10 +1896,13 @@ export async function updateUserDetails(userId: string, data: {
   name?: string;
   email?: string;
   phone?: string;
+  gender?: Gender;
+  avatar?: string;
   password?: string;
   nis?: string;
   class_id?: string;
   nip?: string;
+  teacher_type?: 'guru_bk' | 'wali_kelas';
   specialization?: string;
   room?: string;
   bio?: string;
@@ -1863,6 +1918,12 @@ export async function updateUserDetails(userId: string, data: {
   if (data.name !== undefined) updates.name = data.name.trim();
   if (data.email !== undefined) updates.email = data.email.trim();
   if (data.phone !== undefined) updates.phone = data.phone.trim();
+  if (data.gender === 'L' || data.gender === 'P') {
+    updates.gender = data.gender;
+    updates.avatar = data.avatar || getDefaultAvatarByGender(user.role, data.gender);
+  } else if (data.avatar !== undefined) {
+    updates.avatar = data.avatar;
+  }
   if (data.password && data.password.trim()) {
     updates.password = hashPassword(data.password.trim());
     updates.password_changed = false;
@@ -1876,6 +1937,8 @@ export async function updateUserDetails(userId: string, data: {
     if (updates.name !== undefined) { fields.push(`name = $${idx++}`); values.push(updates.name); }
     if (updates.email !== undefined) { fields.push(`email = $${idx++}`); values.push(updates.email); }
     if (updates.phone !== undefined) { fields.push(`phone = $${idx++}`); values.push(updates.phone); }
+    if (updates.gender !== undefined) { fields.push(`gender = $${idx++}`); values.push(updates.gender); }
+    if (updates.avatar !== undefined) { fields.push(`avatar = $${idx++}`); values.push(updates.avatar); }
     if (updates.password !== undefined) {
       fields.push(`password = $${idx++}`); values.push(updates.password);
       fields.push(`password_changed = $${idx++}`); values.push(false);
@@ -1894,6 +1957,7 @@ export async function updateUserDetails(userId: string, data: {
 
       if (data.nis !== undefined) { sFields.push(`nis = $${sIdx++}`); sValues.push(data.nis.trim()); }
       if (data.class_id !== undefined) { sFields.push(`class_id = $${sIdx++}`); sValues.push(data.class_id); }
+      if (updates.gender !== undefined) { sFields.push(`gender = $${sIdx++}`); sValues.push(updates.gender); }
 
       if (sFields.length > 0) {
         sValues.push(userId);
@@ -1912,6 +1976,8 @@ export async function updateUserDetails(userId: string, data: {
       let tIdx = 1;
 
       if (data.nip !== undefined) { tFields.push(`nip = $${tIdx++}`); tValues.push(data.nip.trim()); }
+      if (data.teacher_type !== undefined) { tFields.push(`teacher_type = $${tIdx++}`); tValues.push(data.teacher_type); }
+      if (updates.gender !== undefined) { tFields.push(`gender = $${tIdx++}`); tValues.push(updates.gender); }
       if (data.specialization !== undefined) { tFields.push(`specialization = $${tIdx++}`); tValues.push(data.specialization.trim()); }
       if (data.room !== undefined) { tFields.push(`room = $${tIdx++}`); tValues.push(data.room.trim()); }
       if (data.bio !== undefined) { tFields.push(`bio = $${tIdx++}`); tValues.push(data.bio.trim()); }
@@ -1944,6 +2010,8 @@ export async function updateUserDetails(userId: string, data: {
     if (updates.name !== undefined) memUser.name = updates.name;
     if (updates.email !== undefined) memUser.email = updates.email;
     if (updates.phone !== undefined) memUser.phone = updates.phone;
+    if (updates.gender !== undefined) memUser.gender = updates.gender;
+    if (updates.avatar !== undefined) memUser.avatar = updates.avatar;
     if (updates.password !== undefined) {
       memUser.password = updates.password;
       memUser.password_changed = false;
@@ -1955,6 +2023,7 @@ export async function updateUserDetails(userId: string, data: {
     if (memStudent) {
       if (data.nis !== undefined) memStudent.nis = data.nis.trim();
       if (data.class_id !== undefined) memStudent.class_id = data.class_id;
+      if (updates.gender !== undefined) memStudent.gender = updates.gender;
     }
     if (data.class_id && data.homeroom_teacher_id !== undefined) {
       const cls = memoryStore.classes.find(c => c.id === data.class_id);
@@ -1966,6 +2035,8 @@ export async function updateUserDetails(userId: string, data: {
     const memTeacher = memoryStore.teachers.find(t => t.user_id === userId);
     if (memTeacher) {
       if (data.nip !== undefined) memTeacher.nip = data.nip.trim();
+      if (data.teacher_type !== undefined) memTeacher.teacher_type = data.teacher_type;
+      if (updates.gender !== undefined) memTeacher.gender = updates.gender;
       if (data.specialization !== undefined) memTeacher.specialization = data.specialization.trim();
       if (data.room !== undefined) memTeacher.room = data.room.trim();
       if (data.bio !== undefined) memTeacher.bio = data.bio.trim();
@@ -1973,6 +2044,7 @@ export async function updateUserDetails(userId: string, data: {
       if (data.assigned_class_ids !== undefined) memTeacher.assigned_class_ids = [...data.assigned_class_ids];
 
       if (memTeacher.teacher_type === 'wali_kelas' && data.managed_class_id !== undefined) {
+        memTeacher.managed_class_id = data.managed_class_id;
         memoryStore.classes.forEach(c => {
           if (c.homeroom_teacher_id === memTeacher.id && c.id !== data.managed_class_id) {
             c.homeroom_teacher_id = null;
@@ -2142,6 +2214,7 @@ export async function deleteUserPermanently(userId: string): Promise<boolean> {
 
 // --- CLASS CRUD ---
 export async function createClass(data: {
+  id?: string;
   name: string;
   grade: string;
   major: string;
@@ -2149,7 +2222,7 @@ export async function createClass(data: {
   bk_teacher_id?: string;
 }): Promise<SchoolClass> {
   const newClass: SchoolClass = {
-    id: `cls-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: data.id || `cls-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     name: data.name.trim(),
     grade: data.grade,
     major: data.major.trim() || 'Umum',
@@ -2158,28 +2231,101 @@ export async function createClass(data: {
   };
 
   if (isPostgresConnected && pool) {
-    await pool.query(
-      `INSERT INTO classes (id, name, grade, major, homeroom_teacher_id, bk_teacher_id)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [newClass.id, newClass.name, newClass.grade, newClass.major, newClass.homeroom_teacher_id, newClass.bk_teacher_id]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO classes (id, name, grade, major, homeroom_teacher_id, bk_teacher_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO UPDATE SET name = $2, grade = $3, major = $4, homeroom_teacher_id = $5, bk_teacher_id = $6`,
+        [newClass.id, newClass.name, newClass.grade, newClass.major, newClass.homeroom_teacher_id, newClass.bk_teacher_id]
+      );
 
-    if (newClass.bk_teacher_id) {
-      const tRes = await pool.query('SELECT assigned_class_ids FROM teachers WHERE id = $1 OR user_id = $1', [newClass.bk_teacher_id]);
-      if (tRes.rows[0]) {
-        let assigned = tRes.rows[0].assigned_class_ids;
-        if (typeof assigned === 'string') assigned = JSON.parse(assigned);
-        if (!Array.isArray(assigned)) assigned = [];
-        if (!assigned.includes(newClass.id)) {
-          assigned.push(newClass.id);
-          await pool.query('UPDATE teachers SET assigned_class_ids = $1 WHERE id = $2 OR user_id = $2', [JSON.stringify(assigned), newClass.bk_teacher_id]);
+      if (newClass.bk_teacher_id) {
+        const tRes = await pool.query('SELECT assigned_class_ids FROM teachers WHERE id = $1 OR user_id = $1', [newClass.bk_teacher_id]);
+        if (tRes.rows[0]) {
+          let assigned = tRes.rows[0].assigned_class_ids;
+          if (typeof assigned === 'string') assigned = JSON.parse(assigned);
+          if (!Array.isArray(assigned)) assigned = [];
+          if (!assigned.includes(newClass.id)) {
+            assigned.push(newClass.id);
+            await pool.query('UPDATE teachers SET assigned_class_ids = $1 WHERE id = $2 OR user_id = $2', [JSON.stringify(assigned), newClass.bk_teacher_id]);
+          }
         }
       }
+    } catch (err) {
+      console.warn('[ADVOCARE DB] Postgres createClass warning:', err);
     }
   }
 
-  memoryStore.classes.push(newClass);
+  const existingIdx = memoryStore.classes.findIndex(c => c.id === newClass.id || c.name.toLowerCase() === newClass.name.toLowerCase());
+  if (existingIdx >= 0) {
+    memoryStore.classes[existingIdx] = { ...memoryStore.classes[existingIdx], ...newClass };
+  } else {
+    memoryStore.classes.push(newClass);
+  }
   return newClass;
+}
+
+export async function assignBkClassesOnServer(teacherId: string, classIds: string[]): Promise<boolean> {
+  const cleanClassIds = Array.isArray(classIds) ? classIds : [];
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query(
+        'UPDATE teachers SET assigned_class_ids = $1 WHERE id = $2 OR user_id = $2',
+        [JSON.stringify(cleanClassIds), teacherId]
+      );
+      await pool.query(
+        'UPDATE classes SET bk_teacher_id = NULL WHERE bk_teacher_id = $1',
+        [teacherId]
+      );
+      if (cleanClassIds.length > 0) {
+        await pool.query(
+          'UPDATE classes SET bk_teacher_id = $1 WHERE id = ANY($2)',
+          [teacherId, cleanClassIds]
+        );
+      }
+    } catch (err) {
+      console.warn('[ADVOCARE DB] Postgres assignBkClassesOnServer warning:', err);
+    }
+  }
+
+  const teacher = memoryStore.teachers.find(t => t.id === teacherId || t.user_id === teacherId);
+  if (teacher) {
+    teacher.assigned_class_ids = [...cleanClassIds];
+    const selectedSet = new Set(cleanClassIds);
+    memoryStore.classes.forEach(c => {
+      if (selectedSet.has(c.id)) {
+        c.bk_teacher_id = teacher.id;
+      } else if (c.bk_teacher_id === teacher.id || c.bk_teacher_id === teacher.user_id) {
+        c.bk_teacher_id = undefined;
+      }
+    });
+  }
+  return true;
+}
+
+export async function syncStateFromClient(payload: {
+  users?: User[];
+  students?: Student[];
+  teachers?: Teacher[];
+  classes?: SchoolClass[];
+  categories?: Category[];
+}): Promise<boolean> {
+  if (Array.isArray(payload.classes)) {
+    memoryStore.classes = payload.classes;
+  }
+  if (Array.isArray(payload.users)) {
+    memoryStore.users = payload.users;
+  }
+  if (Array.isArray(payload.students)) {
+    memoryStore.students = payload.students;
+  }
+  if (Array.isArray(payload.teachers)) {
+    memoryStore.teachers = payload.teachers;
+  }
+  if (Array.isArray(payload.categories) && payload.categories.length > 0) {
+    memoryStore.categories = payload.categories;
+  }
+  return true;
 }
 
 export async function updateClassDetails(classId: string, data: Partial<SchoolClass>): Promise<boolean> {

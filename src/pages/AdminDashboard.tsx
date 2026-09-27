@@ -112,9 +112,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     loadServerStatus();
     db.syncFromBackend().then(() => {
       loadServerStatus();
+      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       setTick(t => t + 1);
     });
     const unsub = db.subscribe(() => {
+      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       setTick(t => t + 1);
     });
     return () => unsub();
@@ -123,6 +125,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleRefresh = async () => {
     await db.syncFromBackend();
     await loadServerStatus();
+    setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     setTick(t => t + 1);
   };
 
@@ -135,11 +138,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const reports = rawTables.reports;
   const messages = rawTables.messages;
 
-  // Real-time synchronization counts from live database (Supabase/PostgreSQL) or current store
-  const displayStudentCount = serverStatus?.counts?.students !== undefined ? serverStatus.counts.students : students.length;
-  const displayClassCount = serverStatus?.counts?.classes !== undefined ? serverStatus.counts.classes : classes.length;
-  const displayTeacherCount = serverStatus?.counts?.teachers !== undefined ? serverStatus.counts.teachers : teachers.length;
-  const displayReportCount = serverStatus?.counts?.reports !== undefined ? serverStatus.counts.reports : reports.length;
+  // Calculate exact counts synchronized 100% with the user/teacher/student tables
+  const studentUsersCount = users.filter(u => u.role === 'siswa').length;
+  const bkTeacherCount = users.filter(u => {
+    if (u.role !== 'guru') return false;
+    const t = teachers.find(tc => tc.user_id === u.id);
+    return t?.teacher_type === 'guru_bk';
+  }).length;
+  const waliTeacherCount = users.filter(u => {
+    if (u.role !== 'guru') return false;
+    const t = teachers.find(tc => tc.user_id === u.id);
+    return t?.teacher_type !== 'guru_bk';
+  }).length;
+
+  const displayStudentCount = studentUsersCount;
+  const displayClassCount = classes.length;
+  const displayTeacherCount = bkTeacherCount + waliTeacherCount;
+  const displayReportCount = reports.length;
 
   // Actively test live connection between backend (Vercel) and database provider (Supabase)
   const handleTestDatabase = async () => {
@@ -175,6 +190,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             Database tersambung langsung ke Supabase. Seluruh perubahan akun pengguna, kelas, guru, dan pengaduan langsung tersimpan di cloud.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Auto-Refresh Aktif ({lastSyncTime})</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+            title="Segarkan & sinkronkan data sekarang"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-purple-600" />
+            <span>Segarkan</span>
+          </button>
         </div>
       </div>
 
@@ -413,7 +444,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <span className="text-[10px] text-slate-400 block">
               {displayTeacherCount === 0
                 ? 'Belum ada guru terdata'
-                : `${teachers.filter(t => t.teacher_type === 'guru_bk').length} BK + ${teachers.filter(t => t.teacher_type === 'wali_kelas').length} Wali Mapel`}
+                : `${bkTeacherCount} BK + ${waliTeacherCount} Wali Kelas`}
             </span>
           </div>
 
@@ -533,7 +564,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <span className="text-[11px] text-slate-400 mt-0.5 block">
                 {displayTeacherCount === 0
                   ? 'Belum ada guru terdata'
-                  : `${teachers.filter(t => t.teacher_type === 'guru_bk').length} Guru BK, ${teachers.filter(t => t.teacher_type === 'wali_kelas').length} Wali Kelas`}
+                  : `${bkTeacherCount} Guru BK, ${waliTeacherCount} Wali Kelas`}
               </span>
             </div>
 

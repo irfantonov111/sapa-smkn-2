@@ -115,9 +115,13 @@ interface DatabaseState {
 class DatabaseService {
   private state: DatabaseState;
   private listeners: Set<() => void> = new Set();
+  private pendingSyncCount = 0;
+  private lastLocalMutationAt = 0;
+  private broadcastChannel: BroadcastChannel | null = null;
 
   constructor() {
     this.state = this.loadFromStorage();
+    this.normalizeStateIntegrity(this.state);
 
     // Listen for storage changes across tabs for instant multi-tab sync
     if (typeof window !== 'undefined') {
@@ -126,6 +130,19 @@ class DatabaseService {
           this.reloadFromStorage();
         }
       });
+
+      if (typeof BroadcastChannel !== 'undefined') {
+        try {
+          this.broadcastChannel = new BroadcastChannel('sapa_realtime_sync_channel');
+          this.broadcastChannel.onmessage = (event) => {
+            if (event.data?.type === 'DB_UPDATED') {
+              this.reloadFromStorage();
+            }
+          };
+        } catch {
+          // Ignore if BroadcastChannel is not supported
+        }
+      }
 
       // Background auto-sync from server API (PostgreSQL / Supabase)
       setTimeout(() => {
@@ -161,9 +178,177 @@ class DatabaseService {
   public reloadFromStorage(): void {
     try {
       this.state = this.loadFromStorage();
+      this.normalizeStateIntegrity(this.state);
       this.notifyListeners();
     } catch (e) {
       console.warn('Error reloading database from storage:', e);
+    }
+  }
+
+  public normalizeStateIntegrity(targetState?: DatabaseState): void {
+    const st = targetState || this.state;
+    if (!st) return;
+
+    // 1. Deduplicate users by ID
+    if (Array.isArray(st.users)) {
+      const userMap = new Map<string, User>();
+      st.users.forEach(u => {
+        if (u && u.id) {
+          userMap.set(u.id, u);
+        }
+      });
+      st.users = Array.from(userMap.values());
+    } else {
+      st.users = [];
+    }
+
+    const userById = new Map<string, User>(st.users.map(u => [u.id, u]));
+
+    // 2. Deduplicate students by user_id and remove orphans whose user_id does not exist or is not 'siswa'
+    if (Array.isArray(st.students)) {
+      const studentByUserMap = new Map<string, Student>();
+      st.students.forEach(s => {
+        if (!s || !s.user_id) return;
+        const u = userById.get(s.user_id);
+        if (!u || u.role !== 'siswa') return;
+        studentByUserMap.set(s.user_id, s);
+      });
+
+      // Ensure every user with role === 'siswa' has a student record so counts always match
+      const defaultClsId = st.classes?.[0]?.id || 'cls-x-rpl-1';
+      st.users.forEach(u => {
+        if (u.role === 'siswa' && !studentByUserMap.has(u.id)) {
+          const newStd: Student = {
+            id: `std-${u.id}`,
+            user_id: u.id,
+            nis: u.id.replace(/\D/g, '').slice(-5) || '10000',
+            class_id: defaultClsId,
+            gender: u.gender || detectGenderFromName(u.name),
+            created_at: u.created_at || new Date().toISOString()
+          };
+          studentByUserMap.set(u.id, newStd);
+        }
+      });
+
+      st.students = Array.from(studentByUserMap.values());
+    } else {
+      st.students = [];
+    }
+
+    // 3. Deduplicate teachers by user_id and remove orphans whose user_id does not exist or is not 'guru'
+    if (Array.isArray(st.teachers)) {
+      const teacherByUserMap = new Map<string, Teacher>();
+      st.teachers.forEach(t => {
+        if (!t || !t.user_id) return;
+        const u = userById.get(t.user_id);
+        if (!u || u.role !== 'guru') return;
+        teacherByUserMap.set(t.user_id, t);
+      });
+
+      // Ensure every user with role === 'guru' has a teacher record so counts always match
+      st.users.forEach(u => {
+        if (u.role === 'guru' && !teacherByUserMap.has(u.id)) {
+          const isBk = u.id.includes('bk') || u.email.toLowerCase().includes('bk');
+          const newTch: Teacher = {
+            id: `tch-${u.id}`,
+            user_id: u.id,
+            nip: encryptNip('198501012010011001'),
+            teacher_type: isBk ? 'guru_bk' : 'wali_kelas',
+            gender: u.gender || detectGenderFromName(u.name),
+            specialization: isBk ? 'Bimbingan Konseling Umum' : 'Wali Kelas',
+            room: isBk ? 'Ruang BK' : 'Ruang Guru',
+            bio: isBk
+              ? 'Mendampingi siswa dengan aman, suportif, dan menjaga privasi penuh.'
+              : 'Mendampingi perkembangan akademik dan karakter kelas binaan.',
+            available_hours: 'Senin - Jumat (07.30 - 15.00 WIB)',
+            assigned_class_ids: [],
+            created_at: u.created_at || new Date().toISOString()
+          };
+          teacherByUserMap.set(u.id, newTch);
+        }
+      });
+
+      st.teachers = Array.from(teacherByUserMap.values());
+    } else {
+      st.teachers = [];
+    }
+
+    // 4. Synchronize gender & default avatars between users, students, and teachers
+    const normalizeGenderVal = (g: any, fallbackName: string): Gender => {
+      if (g === 'P' || g === 'L') return g;
+      if (typeof g === 'string') {
+        const up = g.trim().toUpperCase();
+        if (up === 'P' || up === 'PR' || up === 'W' || up === 'F' || up.startsWith('PEREMPUAN') || up.startsWith('WANITA') || up.startsWith('FEMALE') || up.includes('PEREMPUAN')) return 'P';
+        if (up === 'L' || up === 'LK' || up === 'M' || up.startsWith('LAKI') || up.startsWith('PRIA') || up.startsWith('MALE') || up.includes('LAKI')) return 'L';
+      }
+      return detectGenderFromName(fallbackName);
+    };
+
+    st.students.forEach(s => {
+      const u = userById.get(s.user_id);
+      const rawG = s.gender || u?.gender;
+      const g = normalizeGenderVal(rawG, u?.name || '');
+      s.gender = g;
+      if (u) {
+        u.gender = g;
+        if (!u.avatar || u.avatar.startsWith('data:image/svg+xml')) {
+          u.avatar = getDefaultAvatarByGender('siswa', g);
+        }
+      }
+    });
+
+    st.teachers.forEach(t => {
+      const u = userById.get(t.user_id);
+      const rawG = t.gender || u?.gender;
+      const g = normalizeGenderVal(rawG, u?.name || '');
+      t.gender = g;
+      if (u) {
+        u.gender = g;
+        if (!u.avatar || u.avatar.startsWith('data:image/svg+xml')) {
+          u.avatar = getDefaultAvatarByGender('guru', g);
+        }
+      }
+    });
+
+    st.users.forEach(u => {
+      if (u.role === 'admin') {
+        u.gender = normalizeGenderVal(u.gender, u.name);
+        if (!u.avatar || u.avatar.startsWith('data:image/svg+xml')) {
+          u.avatar = getDefaultAvatarByGender('admin', u.gender);
+        }
+      }
+    });
+
+    // 5. Bidirectional class <-> teacher linkage (homeroom_teacher_id <-> managed_class_id, bk_teacher_id <-> assigned_class_ids)
+    if (Array.isArray(st.classes) && Array.isArray(st.teachers)) {
+      for (const cls of st.classes) {
+        if (cls.homeroom_teacher_id) {
+          const wali = st.teachers.find(t => t.id === cls.homeroom_teacher_id || t.user_id === cls.homeroom_teacher_id);
+          if (wali) {
+            cls.homeroom_teacher_id = wali.id;
+            wali.managed_class_id = cls.id;
+          }
+        }
+        if (cls.bk_teacher_id) {
+          const bk = st.teachers.find(t => t.id === cls.bk_teacher_id || t.user_id === cls.bk_teacher_id);
+          if (bk) {
+            cls.bk_teacher_id = bk.id;
+            if (!bk.assigned_class_ids) bk.assigned_class_ids = [];
+            if (!bk.assigned_class_ids.includes(cls.id)) {
+              bk.assigned_class_ids.push(cls.id);
+            }
+          }
+        }
+      }
+
+      for (const t of st.teachers) {
+        if (t.teacher_type === 'wali_kelas' && t.managed_class_id) {
+          const cls = st.classes.find(c => c.id === t.managed_class_id);
+          if (cls && !cls.homeroom_teacher_id) {
+            cls.homeroom_teacher_id = t.id;
+          }
+        }
+      }
     }
   }
 
@@ -329,18 +514,47 @@ class DatabaseService {
   }
 
   private saveToStorage(stateToSave?: DatabaseState) {
+    const target = stateToSave || this.state;
+    if (target) {
+      this.normalizeStateIntegrity(target);
+    }
+    this.lastLocalMutationAt = Date.now();
     try {
-      const dataStr = JSON.stringify(stateToSave || this.state);
+      const dataStr = JSON.stringify(target);
       localStorage.setItem(`${STORAGE_PREFIX}state`, dataStr);
       localStorage.setItem(`${LEGACY_STORAGE_PREFIX}state`, dataStr);
+      if (this.broadcastChannel) {
+        try {
+          this.broadcastChannel.postMessage({ type: 'DB_UPDATED', timestamp: this.lastLocalMutationAt });
+        } catch {
+          // ignore
+        }
+      }
     } catch (err) {
       console.error('Error saving state to localStorage', err);
     }
     this.notifyListeners();
   }
 
+  public async pushStateToServer(): Promise<boolean> {
+    try {
+      this.normalizeStateIntegrity(this.state);
+      const res = await this.syncToServer('/api/sync/push', 'POST', {
+        users: this.state.users,
+        students: this.state.students,
+        teachers: this.state.teachers,
+        classes: this.state.classes,
+        categories: this.state.categories
+      });
+      return res.success;
+    } catch {
+      return false;
+    }
+  }
+
   // Background server synchronizer with status and error reporting
   private async syncToServer(endpoint: string, method: string, data?: any): Promise<{ success: boolean; data?: any; error?: string }> {
+    this.pendingSyncCount++;
     try {
       const res = await fetch(endpoint, {
         method,
@@ -363,6 +577,8 @@ class DatabaseService {
     } catch (err: any) {
       console.warn(`[syncToServer] ${method} ${endpoint} network error:`, err);
       return { success: false, error: err?.message || 'Gagal terhubung ke backend server' };
+    } finally {
+      this.pendingSyncCount = Math.max(0, this.pendingSyncCount - 1);
     }
   }
 
@@ -547,7 +763,28 @@ class DatabaseService {
       const json = await res.json();
       if (json.success && json.data) {
         const d = json.data;
-        const isDbLive = Boolean(json.database?.isPostgres) || Boolean(json.database?.connected);
+        const isPostgres = Boolean(json.database?.isPostgres);
+        const isDbLive = isPostgres || Boolean(json.database?.connected);
+
+        // If running in-memory backend and client just mutated state or has pending writes, push client state first
+        if (!isPostgres && (this.pendingSyncCount > 0 || Date.now() - this.lastLocalMutationAt < 4000)) {
+          await this.pushStateToServer();
+          this.normalizeStateIntegrity(this.state);
+          this.notifyListeners();
+          return {
+            success: true,
+            isPostgres: false,
+            message: 'Sinkronisasi state lokal ke server berhasil.',
+            counts: {
+              users: this.state.users.length,
+              classes: this.state.classes.length,
+              teachers: this.state.teachers.length,
+              students: this.state.students.length,
+              reports: this.state.reports.length
+            }
+          };
+        }
+
         let updated = false;
 
         // When connected to live database, strictly synchronize tables even if rows are empty (0 rows)
@@ -622,6 +859,7 @@ class DatabaseService {
         }
 
         if (updated) {
+          this.normalizeStateIntegrity(this.state);
           this.saveToStorage();
           this.notifyListeners();
         }
@@ -630,7 +868,7 @@ class DatabaseService {
           success: true,
           isPostgres: Boolean(json.database?.isPostgres),
           message: 'Sinkronisasi berhasil dengan database server.',
-          counts: json.database?.counts || {
+          counts: {
             users: this.state.users.length,
             classes: this.state.classes.length,
             teachers: this.state.teachers.length,
@@ -1871,6 +2109,7 @@ class DatabaseService {
 
     // Sync to backend Supabase/PostgreSQL
     this.syncToServer('/api/classes', 'POST', {
+      id: newClass.id,
       name: newClass.name,
       grade: newClass.grade,
       major: newClass.major,
@@ -2203,6 +2442,7 @@ class DatabaseService {
       email: data.email.trim(),
       nis: data.nis.trim(),
       class_id: data.class_id,
+      gender: data.gender,
       password: data.password ? data.password.trim() : undefined,
       homeroom_teacher_id: data.homeroom_teacher_id
     });
@@ -2360,6 +2600,8 @@ class DatabaseService {
 
     // Sync to backend Supabase/PostgreSQL
     this.syncToServer('/api/users/student', 'POST', {
+      id: newStudent.id,
+      user_id: newUser.id,
       name: data.name,
       email: data.email,
       nis: data.nis,
@@ -2437,6 +2679,8 @@ class DatabaseService {
 
     // Sync to backend Supabase/PostgreSQL
     this.syncToServer('/api/users/teacher', 'POST', {
+      id: newTeacher.id,
+      user_id: newUser.id,
       name: data.name.trim(),
       email: data.email.trim(),
       nip: data.nip.trim(),
@@ -2447,7 +2691,8 @@ class DatabaseService {
       room: newTeacher.room,
       bio: newTeacher.bio,
       available_hours: newTeacher.available_hours,
-      managed_class_id: data.managed_class_id
+      managed_class_id: data.managed_class_id,
+      assigned_class_ids: newTeacher.assigned_class_ids
     });
 
     return { user: newUser, teacher: newTeacher };
