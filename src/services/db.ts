@@ -459,9 +459,11 @@ class DatabaseService {
             }
           }
           if (!parsed.system_settings) {
+            parsed.system_settings = this.getDefaultSystemSettings();
+          } else {
             parsed.system_settings = {
-              reset_password_email: 'admin@smk.sch.id',
-              school_name: 'SMK Negeri 1'
+              ...this.getDefaultSystemSettings(),
+              ...parsed.system_settings
             };
           }
           return parsed;
@@ -504,13 +506,34 @@ class DatabaseService {
       announcements: [...INITIAL_ANNOUNCEMENTS],
       mood_checks: [...INITIAL_MOOD_CHECKS],
       counseling_appointments: [...INITIAL_COUNSELING_APPOINTMENTS],
-      system_settings: {
-        reset_password_email: 'admin@smk.sch.id',
-        school_name: 'SMK Negeri 1'
-      }
+      system_settings: this.getDefaultSystemSettings()
     };
     this.saveToStorage(defaultState);
     return defaultState;
+  }
+
+  public getDefaultSystemSettings(): SystemSettings {
+    return {
+      reset_password_email: 'admin@smk.sch.id',
+      school_name: 'SMK NEGERI 1',
+      gov_header: 'PEMERINTAH DAERAH PROVINSI • DINAS PENDIDIKAN',
+      report_header_subtitle: 'SARANA PENDAMPINGAN DAN ASISTENSI SISWA (SAPA)',
+      counseling_header_subtitle: 'UNIT LAYANAN BIMBINGAN DAN KONSELING (BK) • APLIKASI SAPA',
+      address: 'Jl. Pendidikan No. 1, Kompleks Pendidikan Kejuruan',
+      contact_email: 'info@smk.sch.id',
+      contact_phone: '021-12345678',
+      website: 'www.smkn1.sch.id',
+      logo_url: '',
+      report_doc_title: 'LEMBAR PENANGANAN & DISPOSISI ADUAN SISWA',
+      counseling_doc_title: 'LEMBAR BUKTI JADWAL TEMU BIMBINGAN KONSELING SISWA',
+      sign_city: 'Jakarta',
+      sign_title_report: 'Koordinator Bimbingan Konseling',
+      sign_name_report: 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.',
+      sign_nip_report: 'NIP. 197508121999032001',
+      sign_title_counseling: 'Wali Kelas / Koordinator BK',
+      sign_name_counseling: 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.',
+      sign_nip_counseling: 'NIP. 197508121999032001'
+    };
   }
 
   private saveToStorage(stateToSave?: DatabaseState) {
@@ -544,7 +567,8 @@ class DatabaseService {
         students: this.state.students,
         teachers: this.state.teachers,
         classes: this.state.classes,
-        categories: this.state.categories
+        categories: this.state.categories,
+        system_settings: this.state.system_settings
       });
       return res.success;
     } catch {
@@ -856,6 +880,14 @@ class DatabaseService {
             this.state.counseling_appointments = d.counseling_appointments;
             updated = true;
           }
+        }
+        if (d.system_settings && typeof d.system_settings === 'object' && Object.keys(d.system_settings).length > 0) {
+          this.state.system_settings = {
+            ...this.getDefaultSystemSettings(),
+            ...this.state.system_settings,
+            ...d.system_settings
+          };
+          updated = true;
         }
 
         if (updated) {
@@ -2314,14 +2346,15 @@ class DatabaseService {
   }
 
   public getSystemSettings(): SystemSettings {
+    const defaults = this.getDefaultSystemSettings();
     if (!this.state.system_settings) {
-      this.state.system_settings = {
-        reset_password_email: 'admin@smk.sch.id',
-        school_name: 'SMK Negeri 1'
-      };
+      this.state.system_settings = defaults;
       this.saveToStorage();
     }
-    return { ...this.state.system_settings };
+    return {
+      ...defaults,
+      ...this.state.system_settings
+    };
   }
 
   public updateSystemSettings(updates: Partial<SystemSettings>): SystemSettings {

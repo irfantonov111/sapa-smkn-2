@@ -229,9 +229,23 @@ export interface EnrichedReport extends Report {
 export interface SystemSettings {
   reset_password_email: string;
   school_name: string;
+  gov_header?: string;
+  report_header_subtitle?: string;
+  counseling_header_subtitle?: string;
   address?: string;
   contact_email?: string;
   contact_phone?: string;
+  website?: string;
+  logo_url?: string;
+  report_doc_title?: string;
+  counseling_doc_title?: string;
+  sign_city?: string;
+  sign_title_report?: string;
+  sign_name_report?: string;
+  sign_nip_report?: string;
+  sign_title_counseling?: string;
+  sign_name_counseling?: string;
+  sign_nip_counseling?: string;
   support_phone?: string;
   updated_at?: string;
 }

@@ -16,6 +16,7 @@ import {
   AssignedTo,
   BkTeacherProfile,
   CounselingAppointment,
+  SystemSettings,
   Gender
 } from '../src/types/database';
 import { getDefaultAvatarByGender } from '../src/utils/avatar2d';
@@ -133,7 +134,30 @@ interface MemoryStore {
   announcements: any[];
   mood_checks: any[];
   counseling_appointments: CounselingAppointment[];
+  system_settings: SystemSettings;
 }
+
+const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  reset_password_email: 'admin@smk.sch.id',
+  school_name: 'SMK NEGERI 1',
+  gov_header: 'PEMERINTAH DAERAH PROVINSI • DINAS PENDIDIKAN',
+  report_header_subtitle: 'SARANA PENDAMPINGAN DAN ASISTENSI SISWA (SAPA)',
+  counseling_header_subtitle: 'UNIT LAYANAN BIMBINGAN DAN KONSELING (BK) • APLIKASI SAPA',
+  address: 'Jl. Pendidikan No. 1, Kompleks Pendidikan Kejuruan',
+  contact_email: 'info@smk.sch.id',
+  contact_phone: '021-12345678',
+  website: 'www.smkn1.sch.id',
+  logo_url: '',
+  report_doc_title: 'LEMBAR PENANGANAN & DISPOSISI ADUAN SISWA',
+  counseling_doc_title: 'LEMBAR BUKTI JADWAL TEMU BIMBINGAN KONSELING SISWA',
+  sign_city: 'Jakarta',
+  sign_title_report: 'Koordinator Bimbingan Konseling',
+  sign_name_report: 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.',
+  sign_nip_report: 'NIP. 197508121999032001',
+  sign_title_counseling: 'Wali Kelas / Koordinator BK',
+  sign_name_counseling: 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.',
+  sign_nip_counseling: 'NIP. 197508121999032001'
+};
 
 const memoryStore: MemoryStore = {
   users: JSON.parse(JSON.stringify(INITIAL_USERS)),
@@ -147,7 +171,8 @@ const memoryStore: MemoryStore = {
   notifications: JSON.parse(JSON.stringify(INITIAL_NOTIFICATIONS)),
   announcements: JSON.parse(JSON.stringify(INITIAL_ANNOUNCEMENTS)),
   mood_checks: JSON.parse(JSON.stringify(INITIAL_MOOD_CHECKS)),
-  counseling_appointments: []
+  counseling_appointments: [],
+  system_settings: { ...DEFAULT_SYSTEM_SETTINGS }
 };
 
 export async function initDatabase(): Promise<{ isPostgres: boolean; error?: string }> {
@@ -402,6 +427,7 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
       ALTER TABLE teachers ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
       ALTER TABLE teachers ALTER COLUMN nip TYPE VARCHAR(255);
       ALTER TABLE reports ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS extra_config JSONB DEFAULT '{}'::jsonb;
     `);
 
       // Fast check: if users are empty, seed only essential admin & categories in a single fast query (<50ms)
@@ -1032,8 +1058,75 @@ export async function getMoodChecks(): Promise<any[]> {
   return memoryStore.mood_checks;
 }
 
+export async function getSystemSettings(): Promise<SystemSettings> {
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query('SELECT * FROM system_settings WHERE id = $1 LIMIT 1', ['default']);
+      if (res.rows[0]) {
+        const row = res.rows[0];
+        const extra = typeof row.extra_config === 'string'
+          ? (() => { try { return JSON.parse(row.extra_config); } catch { return {}; } })()
+          : (row.extra_config || {});
+        return {
+          ...DEFAULT_SYSTEM_SETTINGS,
+          ...extra,
+          school_name: row.school_name || extra.school_name || DEFAULT_SYSTEM_SETTINGS.school_name,
+          reset_password_email: row.reset_password_email || extra.reset_password_email || DEFAULT_SYSTEM_SETTINGS.reset_password_email,
+          contact_email: row.contact_email || extra.contact_email || DEFAULT_SYSTEM_SETTINGS.contact_email,
+          contact_phone: row.contact_phone || extra.contact_phone || DEFAULT_SYSTEM_SETTINGS.contact_phone,
+          address: row.address || extra.address || DEFAULT_SYSTEM_SETTINGS.address,
+          updated_at: row.updated_at || extra.updated_at
+        };
+      }
+    } catch {
+      // Fall back to memoryStore
+    }
+  }
+  return { ...DEFAULT_SYSTEM_SETTINGS, ...memoryStore.system_settings };
+}
+
+export async function updateSystemSettings(updates: Partial<SystemSettings>): Promise<SystemSettings> {
+  const current = await getSystemSettings();
+  const merged: SystemSettings = {
+    ...current,
+    ...updates,
+    updated_at: new Date().toISOString()
+  };
+  memoryStore.system_settings = merged;
+
+  if (isPostgresConnected && pool) {
+    try {
+      await pool.query(
+        `INSERT INTO system_settings (id, school_name, reset_password_email, contact_email, contact_phone, address, extra_config, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+         ON CONFLICT (id) DO UPDATE SET
+           school_name = EXCLUDED.school_name,
+           reset_password_email = EXCLUDED.reset_password_email,
+           contact_email = EXCLUDED.contact_email,
+           contact_phone = EXCLUDED.contact_phone,
+           address = EXCLUDED.address,
+           extra_config = EXCLUDED.extra_config,
+           updated_at = EXCLUDED.updated_at`,
+        [
+          'default',
+          merged.school_name || DEFAULT_SYSTEM_SETTINGS.school_name,
+          merged.reset_password_email || DEFAULT_SYSTEM_SETTINGS.reset_password_email,
+          merged.contact_email || '',
+          merged.contact_phone || '',
+          merged.address || '',
+          JSON.stringify(merged),
+          merged.updated_at
+        ]
+      );
+    } catch (e) {
+      console.warn('Postgres updateSystemSettings failed:', e);
+    }
+  }
+  return merged;
+}
+
 export async function getFullDatabaseState() {
-  const [users, students, teachers, classes, categories, reports, announcements, moodChecks, messages, counselingAppointments] = await Promise.all([
+  const [users, students, teachers, classes, categories, reports, announcements, moodChecks, messages, counselingAppointments, systemSettings] = await Promise.all([
     getUsers(),
     getStudents(),
     getTeachers(),
@@ -1043,7 +1136,8 @@ export async function getFullDatabaseState() {
     getAnnouncements(),
     getMoodChecks(),
     getAllMessages(),
-    getCounselingAppointments()
+    getCounselingAppointments(),
+    getSystemSettings()
   ]);
   return {
     users,
@@ -1056,6 +1150,7 @@ export async function getFullDatabaseState() {
     messages,
     mood_checks: moodChecks,
     counseling_appointments: counselingAppointments,
+    system_settings: systemSettings,
     isPostgres: isPostgresConnected
   };
 }
@@ -2309,6 +2404,7 @@ export async function syncStateFromClient(payload: {
   teachers?: Teacher[];
   classes?: SchoolClass[];
   categories?: Category[];
+  system_settings?: SystemSettings;
 }): Promise<boolean> {
   if (Array.isArray(payload.classes)) {
     memoryStore.classes = payload.classes;
@@ -2324,6 +2420,13 @@ export async function syncStateFromClient(payload: {
   }
   if (Array.isArray(payload.categories) && payload.categories.length > 0) {
     memoryStore.categories = payload.categories;
+  }
+  if (payload.system_settings && typeof payload.system_settings === 'object') {
+    memoryStore.system_settings = {
+      ...DEFAULT_SYSTEM_SETTINGS,
+      ...memoryStore.system_settings,
+      ...payload.system_settings
+    };
   }
   return true;
 }

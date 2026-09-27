@@ -14,6 +14,7 @@ import { NotificationsPage } from './pages/NotificationsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { TeacherMoodCheckPage } from './pages/TeacherMoodCheckPage';
+import { StudentCounselingPage } from './pages/StudentCounselingPage';
 import { FirstTimePasswordModal } from './components/FirstTimePasswordModal';
 import { MobileDrawer } from './components/MobileDrawer';
 import { Shield } from 'lucide-react';
@@ -52,7 +53,7 @@ const MainApp: React.FC = () => {
     if (currentUser) {
       if (activeTab === 'landing' || activeTab === 'login') {
         setActiveTab('dashboard');
-      } else if (currentUser.role !== 'siswa' && activeTab === 'create') {
+      } else if (currentUser.role !== 'siswa' && (activeTab === 'create' || activeTab === 'student-counseling')) {
         setActiveTab('dashboard');
       } else if (currentUser.role === 'siswa' && (activeTab === 'inbox' || activeTab === 'follow-up' || activeTab === 'resolved' || activeTab.startsWith('admin'))) {
         setActiveTab('dashboard');
@@ -104,6 +105,9 @@ const MainApp: React.FC = () => {
       case 'inbox':
         return <ReportsListPage key="inbox" onNavigate={handleNavigate} />;
 
+      case 'student-counseling':
+        return <StudentCounselingPage onNavigate={handleNavigate} />;
+
       case 'counseling':
         return <TeacherDashboard onNavigate={handleNavigate} initialTab="counseling" />;
 
@@ -146,6 +150,9 @@ const MainApp: React.FC = () => {
 
       case 'admin-categories':
         return <AdminDashboard key="admin-categories" onNavigate={handleNavigate} activeSubTab="categories" />;
+
+      case 'admin-settings':
+        return <AdminDashboard key="admin-settings" onNavigate={handleNavigate} activeSubTab="settings" />;
 
       default:
         return currentUser.role === 'siswa' ? (

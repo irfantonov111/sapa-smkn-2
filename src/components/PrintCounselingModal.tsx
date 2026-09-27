@@ -14,13 +14,30 @@ export const PrintCounselingModal: React.FC<PrintCounselingModalProps> = ({
   onClose,
   appointment
 }) => {
+  const [, setTick] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const unsub = db.subscribe(() => setTick(t => t + 1));
+    return () => unsub();
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const systemSettings = db.getSystemSettings();
+  const govHeader = systemSettings?.gov_header || 'PEMERINTAH DAERAH PROVINSI • DINAS PENDIDIKAN';
   const schoolName = systemSettings?.school_name || 'SMK NEGERI 1';
+  const counselingSubtitle = systemSettings?.counseling_header_subtitle || 'UNIT LAYANAN BIMBINGAN DAN KONSELING (BK) • APLIKASI SAPA';
   const schoolAddress = systemSettings?.address || 'Jl. Pendidikan No. 1, Kompleks Pendidikan Kejuruan';
   const schoolEmail = systemSettings?.contact_email || 'info@smk.sch.id';
   const schoolPhone = systemSettings?.contact_phone || '021-12345678';
+  const schoolWebsite = systemSettings?.website || '';
+  const logoUrl = systemSettings?.logo_url || '';
+  const docTitle = systemSettings?.counseling_doc_title || 'LEMBAR BUKTI JADWAL TEMU BIMBINGAN KONSELING SISWA';
+  const signCity = systemSettings?.sign_city || '';
+  const signTitle = systemSettings?.sign_title_counseling || 'Wali Kelas / Koordinator BK';
+  const signName = systemSettings?.sign_name_counseling || 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.';
+  const signNip = systemSettings?.sign_nip_counseling || schoolName;
 
   const handlePrint = () => {
     window.print();
@@ -97,21 +114,32 @@ export const PrintCounselingModal: React.FC<PrintCounselingModalProps> = ({
             {/* KOP SURAT RESMI */}
             <div className="border-b-4 border-double border-slate-900 pb-3 mb-5 text-center relative">
               <div className="flex items-center justify-center gap-4 mb-1">
-                <div className="w-14 h-14 rounded-full border-2 border-slate-800 flex items-center justify-center shrink-0 font-sans font-extrabold text-xs text-indigo-900 bg-slate-50">
-                  <Shield className="w-8 h-8 text-indigo-800 stroke-[2]" />
-                </div>
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="Logo Sekolah"
+                    className="w-14 h-14 object-contain shrink-0"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-full border-2 border-slate-800 flex items-center justify-center shrink-0 font-sans font-extrabold text-xs text-indigo-900 bg-slate-50">
+                    <Shield className="w-8 h-8 text-indigo-800 stroke-[2]" />
+                  </div>
+                )}
                 <div>
                   <h4 className="text-xs uppercase tracking-widest font-sans font-bold text-slate-700">
-                    PEMERINTAH DAERAH PROVINSI • DINAS PENDIDIKAN
+                    {govHeader}
                   </h4>
                   <h1 className="text-lg sm:text-xl font-bold uppercase tracking-wider font-sans text-slate-950 mt-0.5">
                     {schoolName}
                   </h1>
                   <h2 className="text-xs font-semibold font-sans text-indigo-900 tracking-wide">
-                    UNIT LAYANAN BIMBINGAN DAN KONSELING (BK) • APLIKASI SAPA
+                    {counselingSubtitle}
                   </h2>
                   <p className="text-[10px] font-sans text-slate-600 mt-0.5">
-                    {schoolAddress} • Telp: {schoolPhone} • Email: {schoolEmail}
+                    {schoolAddress}
+                    {schoolPhone ? ` • Telp: ${schoolPhone}` : ''}
+                    {schoolEmail ? ` • Email: ${schoolEmail}` : ''}
+                    {schoolWebsite ? ` • Web: ${schoolWebsite}` : ''}
                   </p>
                 </div>
               </div>
@@ -120,7 +148,7 @@ export const PrintCounselingModal: React.FC<PrintCounselingModalProps> = ({
             {/* DOKUMEN TITLE */}
             <div className="text-center mb-6">
               <h3 className="text-sm sm:text-base font-bold uppercase tracking-wide underline font-sans">
-                LEMBAR BUKTI JADWAL TEMU BIMBINGAN KONSELING SISWA
+                {docTitle}
               </h3>
               <p className="text-xs font-mono font-bold text-slate-700 mt-1">
                 NO. AGENDA: BK-SAPA/{new Date().getFullYear()}/{appointment.id.replace('apt-', '')}
@@ -207,7 +235,7 @@ export const PrintCounselingModal: React.FC<PrintCounselingModalProps> = ({
             {/* BAGIAN IV: PERNYATAAN & TANDA TANGAN */}
             <div className="mt-8 pt-4 font-sans text-xs">
               <div className="text-right mb-6 text-slate-700">
-                Dicetak di Sekolah pada: {todayFormatted}
+                {signCity ? `${signCity}, ` : 'Dicetak di Sekolah pada: '}{todayFormatted}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 text-center">
@@ -231,13 +259,13 @@ export const PrintCounselingModal: React.FC<PrintCounselingModalProps> = ({
 
                 <div className="col-span-2 sm:col-span-1">
                   <p className="font-semibold text-slate-700">Mengetahui,</p>
-                  <p className="text-[11px] text-slate-600">Wali Kelas / Koordinator BK</p>
+                  <p className="text-[11px] text-slate-600">{signTitle}</p>
                   <div className="h-14 flex items-end justify-center">
                     <p className="font-bold underline text-slate-900">
-                      Koordinator Layanan BK
+                      {signName}
                     </p>
                   </div>
-                  <p className="text-[11px] text-slate-500">{schoolName}</p>
+                  <p className="text-[11px] text-slate-500">{signNip}</p>
                 </div>
               </div>
             </div>

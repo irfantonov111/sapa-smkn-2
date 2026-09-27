@@ -16,13 +16,30 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   report,
   history = []
 }) => {
+  const [, setTick] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const unsub = db.subscribe(() => setTick(t => t + 1));
+    return () => unsub();
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const systemSettings = db.getSystemSettings();
+  const govHeader = systemSettings?.gov_header || 'PEMERINTAH DAERAH PROVINSI • DINAS PENDIDIKAN';
   const schoolName = systemSettings?.school_name || 'SMK NEGERI 1';
+  const reportSubtitle = systemSettings?.report_header_subtitle || 'SARANA PENDAMPINGAN DAN ASISTENSI SISWA (SAPA)';
   const schoolAddress = systemSettings?.address || 'Jl. Pendidikan No. 1, Kompleks Pendidikan Kejuruan';
   const schoolEmail = systemSettings?.contact_email || 'info@smk.sch.id';
   const schoolPhone = systemSettings?.contact_phone || '021-12345678';
+  const schoolWebsite = systemSettings?.website || '';
+  const logoUrl = systemSettings?.logo_url || '';
+  const docTitle = systemSettings?.report_doc_title || 'LEMBAR PENANGANAN & DISPOSISI ADUAN SISWA';
+  const signCity = systemSettings?.sign_city || '';
+  const signTitle = systemSettings?.sign_title_report || 'Koordinator Bimbingan Konseling';
+  const signName = systemSettings?.sign_name_report || 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.';
+  const signNip = systemSettings?.sign_nip_report || 'NIP. 197508121999032001';
 
   const handlePrint = () => {
     window.print();
@@ -122,21 +139,32 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             {/* KOP SURAT RESMI */}
             <div className="border-b-4 border-double border-slate-900 pb-3 mb-5 text-center relative">
               <div className="flex items-center justify-center gap-4 mb-1">
-                <div className="w-14 h-14 rounded-full border-2 border-slate-800 flex items-center justify-center shrink-0 font-sans font-extrabold text-xs text-blue-900 bg-slate-50">
-                  <Shield className="w-8 h-8 text-blue-800 stroke-[2]" />
-                </div>
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="Logo Sekolah"
+                    className="w-14 h-14 object-contain shrink-0"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-full border-2 border-slate-800 flex items-center justify-center shrink-0 font-sans font-extrabold text-xs text-blue-900 bg-slate-50">
+                    <Shield className="w-8 h-8 text-blue-800 stroke-[2]" />
+                  </div>
+                )}
                 <div>
                   <h4 className="text-xs uppercase tracking-widest font-sans font-bold text-slate-700">
-                    PEMERINTAH DAERAH PROVINSI • DINAS PENDIDIKAN
+                    {govHeader}
                   </h4>
                   <h1 className="text-lg sm:text-xl font-bold uppercase tracking-wider font-sans text-slate-950 mt-0.5">
                     {schoolName}
                   </h1>
                   <h2 className="text-xs font-semibold font-sans text-blue-900 tracking-wide">
-                    SARANA PENDAMPINGAN DAN ASISTENSI SISWA (SAPA)
+                    {reportSubtitle}
                   </h2>
                   <p className="text-[10px] font-sans text-slate-600 mt-0.5">
-                    {schoolAddress} • Telp: {schoolPhone} • Email: {schoolEmail}
+                    {schoolAddress}
+                    {schoolPhone ? ` • Telp: ${schoolPhone}` : ''}
+                    {schoolEmail ? ` • Email: ${schoolEmail}` : ''}
+                    {schoolWebsite ? ` • Web: ${schoolWebsite}` : ''}
                   </p>
                 </div>
               </div>
@@ -145,7 +173,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             {/* DOKUMEN TITLE */}
             <div className="text-center mb-6">
               <h3 className="text-sm sm:text-base font-bold uppercase tracking-wide underline font-sans">
-                LEMBAR PENANGANAN & DISPOSISI ADUAN SISWA
+                {docTitle}
               </h3>
               <p className="text-xs font-mono font-bold text-slate-700 mt-1">
                 NO. REGISTER: SAPA/LAP/{new Date().getFullYear()}/{report.report_code}
@@ -280,7 +308,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             {/* BAGIAN IV: PENGESAHAN & TANDA TANGAN */}
             <div className="mt-8 pt-4 font-sans text-xs">
               <div className="text-right mb-6 text-slate-700">
-                Dicetak pada: {todayFormatted}
+                {signCity ? `${signCity}, ` : 'Dicetak pada: '}{todayFormatted}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 text-center">
@@ -288,11 +316,11 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                   <p className="font-semibold text-slate-700">Siswa Pelapor,</p>
                   <div className="h-16 flex items-end justify-center">
                     <p className="font-bold underline text-slate-900">
-                      {report.privacy === 'anonim' ? '(Identitas Anonim)' : report.student_name}
+                      {report.privacy === 'anonim' ? '(Identitas Anonim)' : (report.student?.name || (report as any).student_name || 'Siswa')}
                     </p>
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    {report.privacy === 'anonim' ? 'Kerahasiaan Terlindungi' : `NIS: ${report.student_nis || '-'}`}
+                    {report.privacy === 'anonim' ? 'Kerahasiaan Terlindungi' : `NIS: ${report.student?.nis || (report as any).student_nis || '-'}`}
                   </p>
                 </div>
 
@@ -308,13 +336,13 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 
                 <div className="col-span-2 sm:col-span-1">
                   <p className="font-semibold text-slate-700">Mengetahui,</p>
-                  <p className="text-[11px] text-slate-600">Koordinator Bimbingan Konseling</p>
+                  <p className="text-[11px] text-slate-600">{signTitle}</p>
                   <div className="h-14 flex items-end justify-center">
                     <p className="font-bold underline text-slate-900">
-                      Dra. Hj. Sri Wahyuni, M.Psi
+                      {signName}
                     </p>
                   </div>
-                  <p className="text-[11px] text-slate-500">NIP. 197508121999032001</p>
+                  <p className="text-[11px] text-slate-500">{signNip}</p>
                 </div>
               </div>
             </div>

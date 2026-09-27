@@ -32,10 +32,11 @@ import { AdminUsersTab } from '../components/admin/AdminUsersTab';
 import { AdminClassesTab } from '../components/admin/AdminClassesTab';
 import { AdminCategoriesTab } from '../components/admin/AdminCategoriesTab';
 import { AdminReportsTab } from '../components/admin/AdminReportsTab';
+import { AdminSettingsTab } from '../components/admin/AdminSettingsTab';
 
 interface AdminDashboardProps {
   onNavigate: (tab: string, reportId?: string) => void;
-  activeSubTab?: 'dashboard' | 'reports' | 'users' | 'classes' | 'categories';
+  activeSubTab?: 'dashboard' | 'reports' | 'users' | 'classes' | 'categories' | 'settings';
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -43,7 +44,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   activeSubTab = 'dashboard'
 }) => {
   const { currentUser } = useAuth();
-  const [subTab, setSubTab] = useState<'dashboard' | 'reports' | 'users' | 'classes' | 'categories'>(activeSubTab);
+  const [subTab, setSubTab] = useState<'dashboard' | 'reports' | 'users' | 'classes' | 'categories' | 'settings'>(activeSubTab);
   const [resetMessage, setResetMessage] = useState('');
   const [tick, setTick] = useState(0);
 
@@ -668,6 +669,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           categories={categories}
           onRefresh={handleRefresh}
         />
+      )}
+
+      {/* Subtab 4: Kop Surat & System Settings Management */}
+      {subTab === 'settings' && (
+        <AdminSettingsTab />
       )}
 
       {/* Database & Prisma Setup Guide Modal */}

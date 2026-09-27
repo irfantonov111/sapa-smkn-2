@@ -15,7 +15,8 @@ import {
   Menu,
   HeartHandshake,
   CalendarDays,
-  School
+  School,
+  Settings
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -40,6 +41,11 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
   const pendingCounseling = isBK
     ? db.getCounselingAppointments({ teacher_id: teacherRecord?.id, status: 'menunggu' }).length
     : 0;
+  const studentActiveCounseling = currentUser.role === 'siswa'
+    ? db.getCounselingAppointments({ student_user_id: currentUser.id }).filter(
+        a => a.status === 'menunggu' || a.status === 'disetujui' || a.status === 'dijadwalkan_ulang'
+      ).length
+    : 0;
 
   let navItems: { id: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number }[] = [];
 
@@ -48,6 +54,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
     navItems = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'my-reports', label: 'Laporan Saya', icon: FileText },
+      { id: 'student-counseling', label: 'Jadwalkan Konseling', icon: CalendarDays, badge: studentActiveCounseling },
       { id: 'announcements', label: 'Pengumuman', icon: Megaphone, badge: unreadAnnouncements },
       { id: 'notifications', label: 'Notifikasi', icon: Bell, badge: unreadNotifs }
     ];
@@ -70,6 +77,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
       { id: 'admin-users', label: 'Kelola Pengguna', icon: Users },
       { id: 'admin-classes', label: 'Kelola Kelas', icon: School },
       { id: 'admin-categories', label: 'Kategori', icon: Layers },
+      { id: 'admin-settings', label: 'Pengaturan', icon: Settings },
       { id: 'profile', label: 'Profil', icon: User }
     ];
   }
@@ -138,6 +146,24 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
             >
               <FileText className="w-5 h-5" />
               <span className="text-[10px] mt-0.5 tracking-tight">Laporan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('student-counseling')}
+              className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
+                currentActive === 'student-counseling' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="relative">
+                <CalendarDays className="w-5 h-5" />
+                {studentActiveCounseling > 0 && (
+                  <span className="absolute -top-1 -right-2 px-1 py-0.2 rounded-full text-[9px] font-bold bg-indigo-600 text-white">
+                    {studentActiveCounseling}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] mt-0.5 tracking-tight">Konseling</span>
             </button>
 
             {/* Elevated Center Button for Siswa */}
@@ -293,17 +319,6 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
 
             <button
               type="button"
-              onClick={() => onNavigate('announcements')}
-              className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
-                currentActive === 'announcements' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Megaphone className="w-5 h-5" />
-              <span className="text-[10px] mt-0.5 tracking-tight">Pengumuman</span>
-            </button>
-
-            <button
-              type="button"
               onClick={() => onNavigate('admin-users')}
               className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
                 currentActive === 'admin-users' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
@@ -322,6 +337,17 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
             >
               <School className="w-5 h-5" />
               <span className="text-[10px] mt-0.5 tracking-tight">Kelas</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('admin-settings')}
+              className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
+                currentActive === 'admin-settings' ? 'text-purple-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Settings className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5 tracking-tight">Pengaturan</span>
             </button>
 
             <button

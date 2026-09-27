@@ -59,7 +59,9 @@ import {
   completeCounselingAppointment,
   cancelCounselingAppointment,
   updateCounselingAppointment,
-  deleteCounselingAppointment
+  deleteCounselingAppointment,
+  getSystemSettings,
+  updateSystemSettings
 } from './db';
 
 export const apiRouter = Router();
@@ -919,6 +921,34 @@ apiRouter.delete('/counseling/appointments/:id', async (req: Request, res: Respo
     const { id } = req.params;
     const success = await deleteCounselingAppointment(id);
     res.json({ success });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- SYSTEM SETTINGS (KOP SURAT & PENGATURAN SISTEM) ---
+apiRouter.get('/settings', async (req: Request, res: Response) => {
+  try {
+    const settings = await getSystemSettings();
+    res.json(settings);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/settings', async (req: Request, res: Response) => {
+  try {
+    const updated = await updateSystemSettings(req.body || {});
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.put('/settings', async (req: Request, res: Response) => {
+  try {
+    const updated = await updateSystemSettings(req.body || {});
+    res.json(updated);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
