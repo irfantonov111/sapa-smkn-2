@@ -15,6 +15,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { TeacherMoodCheckPage } from './pages/TeacherMoodCheckPage';
 import { StudentCounselingPage } from './pages/StudentCounselingPage';
+import { StudentMoodCheckPage } from './pages/StudentMoodCheckPage';
 import { FirstTimePasswordModal } from './components/FirstTimePasswordModal';
 import { MobileDrawer } from './components/MobileDrawer';
 import { Shield } from 'lucide-react';
@@ -53,7 +54,7 @@ const MainApp: React.FC = () => {
     if (currentUser) {
       if (activeTab === 'landing' || activeTab === 'login') {
         setActiveTab('dashboard');
-      } else if (currentUser.role !== 'siswa' && (activeTab === 'create' || activeTab === 'student-counseling')) {
+      } else if (currentUser.role !== 'siswa' && (activeTab === 'create' || activeTab === 'student-counseling' || activeTab === 'student-mood')) {
         setActiveTab('dashboard');
       } else if (currentUser.role === 'siswa' && (activeTab === 'inbox' || activeTab === 'follow-up' || activeTab === 'resolved' || activeTab.startsWith('admin'))) {
         setActiveTab('dashboard');
@@ -107,6 +108,9 @@ const MainApp: React.FC = () => {
 
       case 'student-counseling':
         return <StudentCounselingPage onNavigate={handleNavigate} />;
+
+      case 'student-mood':
+        return <StudentMoodCheckPage onNavigate={handleNavigate} />;
 
       case 'counseling':
         return <TeacherDashboard onNavigate={handleNavigate} initialTab="counseling" />;

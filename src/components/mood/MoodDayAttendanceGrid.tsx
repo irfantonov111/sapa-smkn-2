@@ -251,15 +251,10 @@ export const MoodDayAttendanceGrid: React.FC<MoodDayAttendanceGridProps> = ({
           </div>
 
           {/* Quick Month Metrics */}
-          <div className="sm:col-span-2 md:col-span-1 flex items-center justify-between sm:justify-end gap-3 px-3 py-2 bg-blue-50/50 rounded-xl border border-blue-200/80 text-xs">
+          <div className="sm:col-span-2 md:col-span-1 flex items-center justify-between sm:justify-end gap-4 px-4 py-2 bg-blue-50/50 rounded-xl border border-blue-200/80 text-xs">
             <div>
               <span className="text-[10px] text-blue-700 font-bold block">Total Absensi Mood:</span>
               <p className="font-extrabold text-slate-900 text-sm">{classStats.totalFilled} Terisi</p>
-            </div>
-            <div className="h-6 w-px bg-blue-200" />
-            <div>
-              <span className="text-[10px] text-amber-700 font-bold block">Konseling:</span>
-              <p className="font-extrabold text-amber-900 text-sm">{classStats.counselingRequests} Permohonan</p>
             </div>
             <div className="h-6 w-px bg-blue-200" />
             <div>
@@ -392,12 +387,9 @@ export const MoodDayAttendanceGrid: React.FC<MoodDayAttendanceGridProps> = ({
                               type="button"
                               onClick={() => onSelectMoodCheck(record)}
                               className={`w-7 h-7 rounded-lg border text-sm flex items-center justify-center mx-auto transition-transform hover:scale-125 cursor-pointer relative shadow-2xs ${visual.bg}`}
-                              title={`${student.name} • ${dateStr}\nKondisi: ${visual.label}\nCatatan: ${record.note || 'Tidak ada catatan'}${record.needs_counseling ? '\n🚨 Butuh Konseling!' : ''}`}
+                              title={`${student.name} • ${dateStr}\nKondisi: ${visual.label}\nCatatan: ${record.note || 'Tidak ada catatan'}`}
                             >
                               <span>{visual.emoji}</span>
-                              {record.needs_counseling && (
-                                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-600 rounded-full ring-2 ring-white animate-ping" />
-                              )}
                             </button>
                           </td>
                         );
@@ -437,10 +429,6 @@ export const MoodDayAttendanceGrid: React.FC<MoodDayAttendanceGridProps> = ({
             </div>
             <div className="flex items-center gap-1.5">
               <span>😡</span> <span>Marah</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-rose-700 font-bold">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block animate-pulse" />
-              <span>Memohon Konseling</span>
             </div>
           </div>
 

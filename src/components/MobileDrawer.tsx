@@ -166,6 +166,22 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
               <button
                 type="button"
+                onClick={() => handleItemClick('student-mood')}
+                className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition ${
+                  activeTab === 'student-mood'
+                    ? 'bg-pink-600 text-white shadow-xs'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <HeartHandshake className={`w-4 h-4 ${activeTab === 'student-mood' ? 'text-white' : 'text-pink-500'}`} />
+                  <span>Mood Check (Riwayat Absensi)</span>
+                </div>
+                <ChevronRight className={`w-3.5 h-3.5 ${activeTab === 'student-mood' ? 'text-white' : 'text-slate-400'}`} />
+              </button>
+
+              <button
+                type="button"
                 onClick={() => handleItemClick('my-reports')}
                 className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition ${
                   activeTab === 'my-reports'

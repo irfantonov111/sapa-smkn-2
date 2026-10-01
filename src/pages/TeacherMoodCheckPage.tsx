@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Heart,
   Smile,
@@ -24,7 +25,8 @@ import {
   BookOpen,
   CalendarDays,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Download
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
@@ -49,7 +51,7 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
 
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('today');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'needs_counseling' | 'belum_ditinjau'>('all');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'belum_ditinjau' | 'sudah_ditinjau' | 'dalam_tindak_lanjut'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [moodRecords, setMoodRecords] = useState<StudentMoodCheck[]>([]);
   const [availableClasses, setAvailableClasses] = useState<SchoolClass[]>([]);
@@ -99,10 +101,13 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
   const filteredRecords = useMemo(() => {
     return moodRecords.filter((item) => {
       // Status filter
-      if (selectedStatusFilter === 'needs_counseling' && !item.needs_counseling) {
+      if (selectedStatusFilter === 'belum_ditinjau' && item.status !== 'belum_ditinjau') {
         return false;
       }
-      if (selectedStatusFilter === 'belum_ditinjau' && item.status !== 'belum_ditinjau') {
+      if (selectedStatusFilter === 'sudah_ditinjau' && item.status !== 'sudah_ditinjau') {
+        return false;
+      }
+      if (selectedStatusFilter === 'dalam_tindak_lanjut' && item.status !== 'dalam_tindak_lanjut') {
         return false;
       }
 
@@ -172,7 +177,6 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
 
     return {
       total,
-      counselingRequests,
       unreviewed,
       avgScore,
       countHappy,
@@ -180,6 +184,108 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
       countAttention
     };
   }, [moodRecords]);
+
+  // Export Mood Check Report to Excel (.xlsx)
+  const handleExportExcel = () => {
+    const recordsToExport = sortedRecords.length > 0 ? sortedRecords : moodRecords;
+    const moodLabelMap: Record<string, string> = {
+      sangat_senang: 'Sangat Senang',
+      senang: 'Senang',
+      netral: 'Biasa Saja (Netral)',
+      sedih: 'Sedih / Murung',
+      cemas: 'Cemas / Gelisah',
+      marah: 'Marah / Kesal'
+    };
+
+    const statusLabelMap: Record<string, string> = {
+      belum_ditinjau: 'Belum Ditinjau',
+      sudah_ditinjau: 'Sudah Ditinjau',
+      dalam_tindak_lanjut: 'Dalam Tindak Lanjut'
+    };
+
+    const rekapData = recordsToExport.map((item, idx) => ({
+      'No': idx + 1,
+      'Tanggal': item.date,
+      'Jam Absen': item.time || '-',
+      'NIS': item.student_nis,
+      'Nama Siswa': item.student_name,
+      'Kelas': item.class_name,
+      'Kondisi Mood': moodLabelMap[item.mood] || item.mood,
+      'Skor Mood (1-5)': item.mood_score || 3,
+      'Emosi yang Dirasakan': item.emotions && item.emotions.length > 0 ? item.emotions.join(', ') : '-',
+      'Faktor Pemicu': item.trigger || '-',
+      'Catatan / Curhatan Siswa': item.note || '-',
+      'Status Tinjauan BK': statusLabelMap[item.status] || item.status,
+      'Catatan Tindak Lanjut Guru BK': item.teacher_notes || '-',
+      'Ditinjau Oleh': item.reviewed_by_teacher_name || '-'
+    }));
+
+    const classSummaryData = availableClasses.map((cls, idx) => {
+      const clsRecords = recordsToExport.filter(r => r.class_id === cls.id || r.class_name === cls.name);
+      const total = clsRecords.length;
+      const avg = total > 0
+        ? Number((clsRecords.reduce((acc, r) => acc + (r.mood_score || 3), 0) / total).toFixed(2))
+        : 0;
+
+      return {
+        'No': idx + 1,
+        'Nama Kelas': cls.name,
+        'Total Absensi Mood': total,
+        'Sangat Senang': clsRecords.filter(r => r.mood === 'sangat_senang').length,
+        'Senang': clsRecords.filter(r => r.mood === 'senang').length,
+        'Netral': clsRecords.filter(r => r.mood === 'netral').length,
+        'Sedih': clsRecords.filter(r => r.mood === 'sedih').length,
+        'Cemas': clsRecords.filter(r => r.mood === 'cemas').length,
+        'Marah': clsRecords.filter(r => r.mood === 'marah').length,
+        'Rata-rata Skor Mood': avg
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+
+    const wsRekap = XLSX.utils.json_to_sheet(
+      rekapData.length > 0
+        ? rekapData
+        : [{ 'Info': 'Tidak ada data mood check pada filter yang dipilih' }]
+    );
+    wsRekap['!cols'] = [
+      { wch: 5 },
+      { wch: 13 },
+      { wch: 11 },
+      { wch: 14 },
+      { wch: 26 },
+      { wch: 14 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 28 },
+      { wch: 24 },
+      { wch: 36 },
+      { wch: 20 },
+      { wch: 34 },
+      { wch: 22 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsRekap, 'Rekap Mood Check Siswa');
+
+    if (classSummaryData.length > 0) {
+      const wsSummary = XLSX.utils.json_to_sheet(classSummaryData);
+      wsSummary['!cols'] = [
+        { wch: 5 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 20 }
+      ];
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Ringkasan Per Kelas');
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `Laporan_Mood_Check_Siswa_${todayStr}.xlsx`);
+  };
 
   const handleSaveReview = () => {
     if (!activeItem || !currentUser) return;
@@ -289,7 +395,17 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs shadow-md shadow-emerald-900/20 transition flex items-center gap-2 cursor-pointer"
+              title="Unduh Laporan Mood Check Siswa dalam format Microsoft Excel (.xlsx)"
+            >
+              <Download className="w-4 h-4" />
+              <span>Export Laporan Excel</span>
+            </button>
+
             <button
               type="button"
               onClick={loadData}
@@ -328,19 +444,15 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
           <span className="text-[11px] text-slate-400 mt-0.5 block">Sesuai rentang filter aktif</span>
         </div>
 
-        <div className={`p-4 sm:p-5 rounded-2xl border shadow-2xs transition ${
-          stats.counselingRequests > 0
-            ? 'bg-amber-50/70 border-amber-300'
-            : 'bg-white border-slate-200'
-        }`}>
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-800">Permintaan Konseling</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
-              <AlertTriangle className="w-4 h-4" />
+            <span className="text-xs font-bold text-indigo-600">Kondisi Netral / Biasa</span>
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <Meh className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-2xl sm:text-3xl font-extrabold text-amber-950 mt-2">{stats.counselingRequests}</p>
-          <span className="text-[11px] text-amber-800 mt-0.5 block font-medium">Siswa memohon diajak bicara</span>
+          <p className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-2">{stats.countNeutral}</p>
+          <span className="text-[11px] text-slate-400 mt-0.5 block">Rata-rata skor: {stats.avgScore} / 5.0</span>
         </div>
 
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs">
@@ -495,9 +607,10 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
                     onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
                     className="bg-transparent border-none p-0 text-xs font-semibold text-slate-700 focus:outline-none w-full cursor-pointer"
                   >
-                    <option value="all">Semua Status</option>
-                    <option value="needs_counseling">🚨 Butuh Konseling</option>
+                    <option value="all">Semua Status Tinjauan</option>
                     <option value="belum_ditinjau">Belum Ditinjau</option>
+                    <option value="sudah_ditinjau">Sudah Ditinjau</option>
+                    <option value="dalam_tindak_lanjut">Dalam Tindak Lanjut</option>
                   </select>
                 </div>
               </div>
@@ -547,7 +660,7 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
 
           {/* Table / List of Mood Checks */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm sm:text-base font-extrabold text-slate-900">
                   Daftar Rekapitulasi Mood Siswa
@@ -557,9 +670,19 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
                 </span>
               </div>
 
-              <p className="text-xs text-slate-500 hidden sm:block">
-                Klik baris siswa untuk melihat riwayat lengkap & menulis catatan bimbingan
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-slate-500 hidden lg:block">
+                  Klik baris siswa untuk melihat riwayat lengkap & menulis catatan bimbingan
+                </p>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Export ke Excel</span>
+                </button>
+              </div>
             </div>
 
             {sortedRecords.length === 0 ? (
@@ -585,9 +708,7 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
                     <div
                       key={item.id}
                       onClick={() => setActiveItem(item)}
-                      className={`p-4 sm:p-5 hover:bg-slate-50/80 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                        item.needs_counseling ? 'bg-amber-50/30' : ''
-                      }`}
+                      className="p-4 sm:p-5 hover:bg-slate-50/80 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                     >
                       {/* Student info */}
                       <div className="flex items-start gap-3.5 min-w-0">
@@ -657,12 +778,6 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
                               {moodInfo.label}
                             </span>
                           </div>
-
-                          {item.needs_counseling && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 animate-pulse">
-                              🚨 Memohon Konseling
-                            </span>
-                          )}
 
                           {item.status === 'belum_ditinjau' ? (
                             <span className="text-[10px] text-slate-400">
@@ -778,13 +893,6 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
                       </span>
                     </div>
                   </div>
-
-                  {activeItem.needs_counseling && (
-                    <div className="px-3 py-1.5 rounded-xl bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold flex items-center gap-1.5 animate-pulse">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span>Siswa Memohon Konseling</span>
-                    </div>
-                  )}
                 </div>
 
                 {/* Emotion Tags */}
@@ -866,11 +974,6 @@ export const TeacherMoodCheckPage: React.FC<TeacherMoodCheckPageProps> = ({ onNa
                         <span className="text-[11px] text-slate-400">• {h.date}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {h.needs_counseling && (
-                          <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">
-                            Butuh Konseling
-                          </span>
-                        )}
                         <span className="text-[10px] text-slate-400">{h.time}</span>
                       </div>
                     </div>

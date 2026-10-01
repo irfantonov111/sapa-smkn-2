@@ -53,6 +53,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
     // Menu Profil dihilangkan dari tab navigasi siswa karena sudah dapat diakses via profil di samping pojok atas
     navItems = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'student-mood', label: 'Mood Check', icon: HeartHandshake },
       { id: 'my-reports', label: 'Laporan Saya', icon: FileText },
       { id: 'student-counseling', label: 'Jadwalkan Konseling', icon: CalendarDays, badge: studentActiveCounseling },
       { id: 'announcements', label: 'Pengumuman', icon: Megaphone, badge: unreadAnnouncements },
@@ -135,6 +136,17 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, activeTab, o
             >
               <LayoutDashboard className="w-5 h-5" />
               <span className="text-[10px] mt-0.5 tracking-tight">Dashboard</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('student-mood')}
+              className={`flex-1 py-1.5 flex flex-col items-center justify-center relative transition ${
+                currentActive === 'student-mood' ? 'text-pink-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <HeartHandshake className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5 tracking-tight">Mood Check</span>
             </button>
 
             <button

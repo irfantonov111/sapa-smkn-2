@@ -217,7 +217,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Database & Cloud Synchronization Card */}
+      {/* Database & Cloud Synchronization Card (Only shown on Dashboard menu) */}
+      {subTab === 'dashboard' && (
       <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center gap-3">
@@ -466,6 +467,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Guide Modal for Vercel & Supabase Setup */}
       {showConfigModal && (
