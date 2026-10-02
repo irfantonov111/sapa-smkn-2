@@ -54,7 +54,10 @@ export const StudentCounselingPage: React.FC<StudentCounselingPageProps> = () =>
 
   const loadData = () => {
     if (!currentUser) return;
-    const list = db.getCounselingAppointments({ student_user_id: currentUser.id });
+    const list = db.getCounselingAppointments({
+      student_id: studentProfile?.id,
+      student_user_id: currentUser.id
+    });
     setAppointments(list);
     const teachers = db.getBkTeachers().filter(t => t.is_active !== false);
     setBkTeachers(teachers);
@@ -69,6 +72,7 @@ export const StudentCounselingPage: React.FC<StudentCounselingPageProps> = () =>
 
   useEffect(() => {
     loadData();
+    db.fetchCounselingAppointments().then(loadData);
     db.syncFromBackend().then(loadData);
 
     const unsub = db.subscribe(() => {
@@ -76,9 +80,10 @@ export const StudentCounselingPage: React.FC<StudentCounselingPageProps> = () =>
     });
 
     const interval = setInterval(async () => {
+      await db.fetchCounselingAppointments();
       await db.syncFromBackend();
       loadData();
-    }, 4000);
+    }, 3000);
 
     return () => {
       unsub();
@@ -219,7 +224,10 @@ export const StudentCounselingPage: React.FC<StudentCounselingPageProps> = () =>
       const q = searchQuery.toLowerCase().trim();
       const matchTeacher = (apt.teacher_name || '').toLowerCase().includes(q);
       const matchTopic = (apt.topic || '').toLowerCase().includes(q);
-      const matchDate = (apt.requested_date || '').toLowerCase().includes(q) || (apt.rescheduled_date || '').toLowerCase().includes(q);
+      const matchDate =
+        (apt.requested_date || '').toLowerCase().includes(q) ||
+        (apt.confirmed_date || '').toLowerCase().includes(q) ||
+        (apt.rescheduled_date || '').toLowerCase().includes(q);
       return matchTeacher || matchTopic || matchDate;
     }
 
@@ -389,13 +397,17 @@ export const StudentCounselingPage: React.FC<StudentCounselingPageProps> = () =>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {filteredAppointments.map((apt, index) => {
                   const effectiveDate =
-                    apt.status === 'dijadwalkan_ulang' && apt.rescheduled_date
-                      ? apt.rescheduled_date
-                      : apt.requested_date;
+                    apt.confirmed_date ||
+                    apt.rescheduled_date ||
+                    apt.requested_date;
                   const effectiveTime =
-                    apt.status === 'dijadwalkan_ulang' && apt.rescheduled_time
-                      ? apt.rescheduled_time
-                      : apt.requested_time;
+                    apt.confirmed_time ||
+                    apt.rescheduled_time ||
+                    apt.requested_time;
+                  const isScheduleChanged =
+                    (apt.confirmed_date && apt.confirmed_date !== apt.requested_date) ||
+                    (apt.confirmed_time && apt.confirmed_time !== apt.requested_time) ||
+                    apt.status === 'dijadwalkan_ulang';
 
                   return (
                     <tr
@@ -416,6 +428,11 @@ export const StudentCounselingPage: React.FC<StudentCounselingPageProps> = () =>
                           <Clock className="w-3 h-3 text-slate-400 shrink-0" />
                           <span>Pukul {effectiveTime} WIB</span>
                         </div>
+                        {isScheduleChanged && (
+                          <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                            Diperbarui Guru BK
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-3.5 px-4">
@@ -575,15 +592,17 @@ export const StudentCounselingPage: React.FC<StudentCounselingPageProps> = () =>
                     Jadwal Pelaksanaan Efektif
                   </span>
                   <p className="text-xs font-extrabold text-slate-900">
-                    {detailAppointment.status === 'dijadwalkan_ulang' && detailAppointment.rescheduled_date
-                      ? formatDateIndo(detailAppointment.rescheduled_date)
-                      : formatDateIndo(detailAppointment.requested_date)}
+                    {formatDateIndo(
+                      detailAppointment.confirmed_date ||
+                        detailAppointment.rescheduled_date ||
+                        detailAppointment.requested_date
+                    )}
                   </p>
                   <p className="text-[11px] text-slate-600 font-mono">
                     Pukul{' '}
-                    {detailAppointment.status === 'dijadwalkan_ulang' && detailAppointment.rescheduled_time
-                      ? detailAppointment.rescheduled_time
-                      : detailAppointment.requested_time}{' '}
+                    {detailAppointment.confirmed_time ||
+                      detailAppointment.rescheduled_time ||
+                      detailAppointment.requested_time}{' '}
                     WIB
                   </p>
                 </div>

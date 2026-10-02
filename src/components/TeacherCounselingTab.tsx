@@ -413,8 +413,10 @@ export const TeacherCounselingTab: React.FC<TeacherCounselingTabProps> = ({ onNa
         {
           requested_date: editDate,
           requested_time: editTime,
-          confirmed_date: editStatus === 'disetujui' || editStatus === 'dijadwalkan_ulang' ? editDate : editModalApt.confirmed_date,
-          confirmed_time: editStatus === 'disetujui' || editStatus === 'dijadwalkan_ulang' ? editTime : editModalApt.confirmed_time,
+          confirmed_date: editDate,
+          confirmed_time: editTime,
+          rescheduled_date: editStatus === 'dijadwalkan_ulang' ? editDate : undefined,
+          rescheduled_time: editStatus === 'dijadwalkan_ulang' ? editTime : undefined,
           counseling_type: editType,
           status: editStatus,
           topic: editTopic.trim(),

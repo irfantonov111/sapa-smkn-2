@@ -67,6 +67,7 @@ export interface Teacher {
   available_hours?: string;
   is_active?: boolean;
   assigned_class_ids?: string[];
+  managed_class_id?: string | null;
   created_at: string;
 }
 
@@ -86,6 +87,7 @@ export interface BkTeacherProfile {
   status: 'tersedia' | 'konseling' | 'istirahat';
   is_active?: boolean;
   assigned_class_ids?: string[];
+  managed_class_id?: string | null;
   today_reports_count?: number;
   daily_limit?: number;
 }
@@ -142,6 +144,7 @@ export interface Category {
   icon: string;
   color: string;
   active: boolean;
+  subcategories?: string[];
 }
 
 export interface ReportAttachment {
@@ -159,6 +162,7 @@ export interface Report {
   report_code: string; // e.g. AC-00001
   student_id: string;
   category_id: string;
+  subcategory?: string; // Sub kategori layanan BK yang dipilih siswa
   assigned_to: AssignedTo;
   assigned_teacher_id?: string | null;
   title: string;
@@ -264,7 +268,9 @@ export interface CounselingAppointment {
   student_id: string;
   student_user_id: string;
   student_name: string;
+  student_nis?: string;
   student_class_name?: string;
+  class_name?: string;
   teacher_id: string;
   teacher_user_id: string;
   teacher_name: string;
@@ -272,6 +278,8 @@ export interface CounselingAppointment {
   requested_time: string;       // e.g. "09:30"
   confirmed_date?: string;      // Tanggal definitif / reschedule jika diubah guru
   confirmed_time?: string;      // Jam definitif / reschedule jika diubah guru
+  rescheduled_date?: string;    // Alias tanggal reschedule
+  rescheduled_time?: string;    // Alias jam reschedule
   topic: string;                // Keperluan / topik bimbingan
   counseling_type: CounselingType;
   status: CounselingAppointmentStatus;

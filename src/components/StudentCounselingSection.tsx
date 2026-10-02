@@ -46,7 +46,10 @@ export const StudentCounselingSection: React.FC<StudentCounselingSectionProps> =
 
   const loadAppointments = () => {
     if (!currentUser) return;
-    const list = db.getCounselingAppointments({ student_user_id: currentUser.id });
+    const list = db.getCounselingAppointments({
+      student_id: studentProfile?.id,
+      student_user_id: currentUser.id
+    });
     setAppointments(list);
     const teachers = db.getBkTeachers().filter(t => t.is_active !== false);
     setBkTeachers(teachers);
@@ -62,6 +65,7 @@ export const StudentCounselingSection: React.FC<StudentCounselingSectionProps> =
 
   useEffect(() => {
     loadAppointments();
+    db.fetchCounselingAppointments().then(loadAppointments);
 
     const unsub = db.subscribe(() => {
       loadAppointments();
@@ -234,9 +238,7 @@ export const StudentCounselingSection: React.FC<StudentCounselingSectionProps> =
             <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
               <Clock className="w-3.5 h-3.5 text-indigo-600" />
               <span>
-                {latestActive.status === 'dijadwalkan_ulang' && latestActive.rescheduled_date
-                  ? `${latestActive.rescheduled_date} • Jam ${latestActive.rescheduled_time}`
-                  : `${latestActive.requested_date} • Jam ${latestActive.requested_time} WIB`}
+                {`${latestActive.confirmed_date || latestActive.rescheduled_date || latestActive.requested_date} • Jam ${latestActive.confirmed_time || latestActive.rescheduled_time || latestActive.requested_time} WIB`}
               </span>
             </div>
           </div>
@@ -577,9 +579,7 @@ export const StudentCounselingSection: React.FC<StudentCounselingSectionProps> =
                       <div>
                         <span className="text-slate-400 block text-[10px]">Waktu Sesi:</span>
                         <p className="font-bold text-slate-800">
-                          {apt.status === 'dijadwalkan_ulang' && apt.rescheduled_date
-                            ? `${apt.rescheduled_date} • Jam ${apt.rescheduled_time}`
-                            : `${apt.requested_date} • Jam ${apt.requested_time} WIB`}
+                          {`${apt.confirmed_date || apt.rescheduled_date || apt.requested_date} • Jam ${apt.confirmed_time || apt.rescheduled_time || apt.requested_time} WIB`}
                         </p>
                       </div>
 

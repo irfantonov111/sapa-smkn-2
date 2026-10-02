@@ -47,7 +47,12 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
     : undefined;
   const defaultBkUserId = classBkTeacher?.user_id || null;
 
-  const [categoryId, setCategoryId] = useState<string>(categories[0]?.id || 'cat-1');
+  const [categoryId, setCategoryId] = useState<string>(categories[0]?.id || 'cat-pribadi');
+  const [subcategory, setSubcategory] = useState<string>(() => {
+    const firstCat = categories[0];
+    return (firstCat?.subcategories && firstCat.subcategories.length > 0) ? firstCat.subcategories[0] : '';
+  });
+  const [customSubcategory, setCustomSubcategory] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [urgency, setUrgency] = useState<ReportUrgency>('sedang');
@@ -56,6 +61,17 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
   const [privacy, setPrivacy] = useState<ReportPrivacy>('terbuka');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const handleCategorySelect = (newCatId: string) => {
+    setCategoryId(newCatId);
+    const targetCat = categories.find(c => c.id === newCatId);
+    if (targetCat?.subcategories && targetCat.subcategories.length > 0) {
+      setSubcategory(targetCat.subcategories[0]);
+    } else {
+      setSubcategory('');
+    }
+    setCustomSubcategory('');
+  };
 
   // Local File & Photo Attachment State
   const [attachments, setAttachments] = useState<ReportAttachment[]>([]);
@@ -181,10 +197,20 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
       return;
     }
 
+    const finalSubcategory = subcategory === '__custom__'
+      ? customSubcategory.trim()
+      : subcategory.trim();
+
+    if (!finalSubcategory) {
+      setErrorMessage('Silakan pilih salah satu sub kategori layanan.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const created = db.createReport(currentUser, {
         category_id: categoryId,
+        subcategory: finalSubcategory,
         assigned_to: assignedTo,
         assigned_teacher_id: assignedTo === 'guru_bk' ? selectedTeacherId : (homeroomTeacher?.id || null),
         title: title.trim(),
@@ -283,32 +309,56 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* 1. Kategori */}
+          {/* 1. Bidang Layanan Utama BK */}
           <div>
-            <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-              1. Kategori Laporan <span className="text-rose-500">*</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                1. Bidang Layanan Utama BK <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+                4 Bidang Layanan Pokok
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mb-2.5">
+              Pilih bidang bimbingan konseling yang paling sesuai dengan kebutuhan atau persoalanmu:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               {categories.map((cat) => {
                 const isSelected = categoryId === cat.id;
                 return (
                   <div
                     key={cat.id}
-                    onClick={() => setCategoryId(cat.id)}
-                    className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex items-start gap-3 ${
+                    onClick={() => handleCategorySelect(cat.id)}
+                    className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
                       isSelected
-                        ? 'border-blue-600 bg-blue-50/50 shadow-xs'
+                        ? 'border-purple-600 bg-purple-50/50 shadow-xs ring-2 ring-purple-600/10'
                         : 'border-slate-200 hover:border-slate-300 bg-white'
                     }`}
                   >
-                    <CategoryIcon iconName={cat.icon} color={cat.color} className="w-4 h-4" />
-                    <div className="flex-1">
-                      <p className={`text-xs font-bold ${isSelected ? 'text-blue-900' : 'text-slate-800'}`}>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <CategoryIcon iconName={cat.icon} color={cat.color} className="w-4 h-4" />
+                        {isSelected && (
+                          <CheckCircle className="w-4 h-4 text-purple-600" />
+                        )}
+                      </div>
+                      <p className={`text-xs font-bold ${isSelected ? 'text-purple-950 font-extrabold' : 'text-slate-900'}`}>
                         {cat.name}
                       </p>
-                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5 line-clamp-2">
+                      <p className="text-[11px] text-slate-500 leading-snug mt-1 line-clamp-2">
                         {cat.description}
                       </p>
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-slate-400">
+                        {cat.subcategories?.length || 0} Sub Topik
+                      </span>
+                      {isSelected ? (
+                        <span className="text-[10px] font-bold text-purple-700 bg-purple-100/70 px-1.5 py-0.2 rounded">Terpilih</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 hover:text-slate-600">Klik pilih</span>
+                      )}
                     </div>
                   </div>
                 );
@@ -316,10 +366,98 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
             </div>
           </div>
 
-          {/* 2. Judul */}
+          {/* 2. Sub Kategori Layanan BK */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  2. Sub Kategori Layanan: <span className="text-purple-700">{selectedCategory?.name}</span> <span className="text-rose-500">*</span>
+                </label>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Pilih fokus permasalahan spesifik yang ingin kamu konsultasikan atau laporkan:
+                </p>
+              </div>
+              <span className="text-[11px] font-bold text-purple-700 bg-white px-2.5 py-1 rounded-lg border border-purple-200 self-start sm:self-auto shadow-2xs">
+                Bidang {selectedCategory?.name}
+              </span>
+            </div>
+
+            {/* List of Subcategories */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {selectedCategory?.subcategories && selectedCategory.subcategories.length > 0 ? (
+                selectedCategory.subcategories.map((sub, idx) => {
+                  const isSubSelected = subcategory === sub;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setSubcategory(sub);
+                        setCustomSubcategory('');
+                      }}
+                      className={`text-left p-3 rounded-xl border transition-all flex items-start gap-2.5 cursor-pointer ${
+                        isSubSelected
+                          ? 'border-purple-600 bg-purple-100/70 text-purple-950 font-bold shadow-xs ring-1 ring-purple-600'
+                          : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700 hover:bg-slate-50/80 font-medium'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                        isSubSelected
+                          ? 'border-purple-600 bg-purple-600 text-white'
+                          : 'border-slate-300 bg-white'
+                      }`}>
+                        {isSubSelected && <span className="w-1.5 h-1.5 bg-white rounded-full"></span>}
+                      </div>
+                      <span className="text-xs leading-snug flex-1">{sub}</span>
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="text-xs text-slate-500 italic col-span-full">
+                  Belum ada daftar subkategori. Kamu bisa menuliskan topik spesifik di bawah ini.
+                </p>
+              )}
+
+              {/* Option to type custom subcategory */}
+              <button
+                type="button"
+                onClick={() => setSubcategory('__custom__')}
+                className={`text-left p-3 rounded-xl border transition-all flex items-start gap-2.5 cursor-pointer ${
+                  subcategory === '__custom__'
+                    ? 'border-purple-600 bg-purple-100/70 text-purple-950 font-bold shadow-xs ring-1 ring-purple-600'
+                    : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700 hover:bg-slate-50/80 font-medium'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                  subcategory === '__custom__'
+                    ? 'border-purple-600 bg-purple-600 text-white'
+                    : 'border-slate-300 bg-white'
+                }`}>
+                  {subcategory === '__custom__' && <span className="w-1.5 h-1.5 bg-white rounded-full"></span>}
+                </div>
+                <span className="text-xs leading-snug flex-1">+ Topik Spesifik Lainnya</span>
+              </button>
+            </div>
+
+            {/* Custom Subcategory Input */}
+            {subcategory === '__custom__' && (
+              <div className="pt-2">
+                <input
+                  type="text"
+                  required
+                  value={customSubcategory}
+                  onChange={(e) => setCustomSubcategory(e.target.value)}
+                  placeholder={`Tuliskan topik subkategori spesifik untuk bidang ${selectedCategory?.name || 'layanan'}...`}
+                  className="w-full px-3.5 py-2.5 bg-white border border-purple-300 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* 3. Judul */}
           <div>
             <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">
-              2. Judul Laporan <span className="text-rose-500">*</span>
+              3. Judul Laporan <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -331,10 +469,10 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
             />
           </div>
 
-          {/* 3. Ceritakan Masalahmu */}
+          {/* 4. Ceritakan Masalahmu */}
           <div>
             <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">
-              3. Ceritakan Masalahmu <span className="text-rose-500">*</span>
+              4. Ceritakan Masalahmu <span className="text-rose-500">*</span>
             </label>
             <textarea
               rows={5}
@@ -349,11 +487,11 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
             </p>
           </div>
 
-          {/* 4. Lampiran Foto atau File Bukti (Opsional) */}
+          {/* 5. Lampiran Foto atau File Bukti (Opsional) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                4. Lampiran Foto atau File Bukti <span className="text-slate-400 font-normal lowercase">(opsional)</span>
+                5. Lampiran Foto atau File Bukti <span className="text-slate-400 font-normal lowercase">(opsional)</span>
               </label>
               {attachments.length > 0 && (
                 <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
@@ -507,10 +645,10 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
             )}
           </div>
 
-          {/* 5. Tingkat Urgensi */}
+          {/* 6. Tingkat Urgensi */}
           <div>
             <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-              5. Tingkat Urgensi
+              6. Tingkat Urgensi
             </label>
             <div className="grid grid-cols-3 gap-2.5">
               <div
@@ -551,10 +689,10 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
             </div>
           </div>
 
-          {/* 6. Ditujukan Kepada */}
+          {/* 7. Ditujukan Kepada */}
           <div>
             <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-              6. Ditujukan Kepada
+              7. Ditujukan Kepada
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div
@@ -659,67 +797,51 @@ export const CreateReportPage: React.FC<CreateReportPageProps> = ({
             )}
           </div>
 
-          {/* 7. Tingkat Kerahasiaan */}
+          {/* 8. Kategori Kerahasiaan */}
           <div>
             <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-              7. Tingkat Kerahasiaan
+              8. Kategori Kerahasiaan Laporan
             </label>
-            <div className="space-y-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div
                 onClick={() => setPrivacy('terbuka')}
-                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition flex items-center gap-3 ${
+                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition flex items-start gap-3 ${
                   privacy === 'terbuka'
                     ? 'border-emerald-500 bg-emerald-50/50'
                     : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
-                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 mt-0.5">
                   <Eye className="w-4 h-4" />
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-900">Identitas Terbuka</span>
-                    <span className="text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded font-semibold">Disarankan</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-slate-900">Terbuka</span>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded font-semibold">Disarankan</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Nama dan kelasmu ditampilkan lengkap kepada guru agar penanganan dapat dilakukan secara personal dan cepat.
-                  </p>
-                </div>
-              </div>
-
-              <div
-                onClick={() => setPrivacy('terbatas')}
-                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition flex items-center gap-3 ${
-                  privacy === 'terbatas'
-                    ? 'border-blue-500 bg-blue-50/50'
-                    : 'border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <div className="flex-1">
-                  <span className="text-xs font-bold text-slate-900">Identitas Terbatas</span>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Hanya guru yang menerima langsung laporan ini yang mengetahui identitasmu, tertutup rapat dari pihak lain.
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Identitas nama dan kelasmu ditampilkan kepada guru pembimbing agar penanganan dapat dilakukan secara personal dan cepat.
                   </p>
                 </div>
               </div>
 
               <div
                 onClick={() => setPrivacy('anonim')}
-                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition flex items-center gap-3 ${
+                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition flex items-start gap-3 ${
                   privacy === 'anonim'
                     ? 'border-purple-500 bg-purple-50/50'
                     : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
-                <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 mt-0.5">
                   <UserX className="w-4 h-4" />
                 </div>
                 <div className="flex-1">
-                  <span className="text-xs font-bold text-slate-900">Anonim (Nama Dirahasiakan)</span>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-slate-900">Anonim</span>
+                    <span className="text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded font-semibold">Nama Dirahasiakan</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                     Nama dan NIS kamu disamarkan sebagai "Siswa Anonim" di layar guru. Kamu tetap dapat memantau status dan bertukar pesan.
                   </p>
                 </div>

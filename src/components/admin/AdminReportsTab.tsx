@@ -341,7 +341,7 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
             <span>Manajemen Laporan Pengaduan Siswa</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Pantau status penanganan, delegasikan guru pendamping, dan riwayat pengaduan lengkap.
+            Pantau data laporan pengaduan siswa, delegasikan guru pendamping, dan perbarui status (Detail isi cerita dan ruang chat bersifat rahasia antara Siswa & Guru Pembimbing).
           </p>
         </div>
       </div>
@@ -628,6 +628,11 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
                           <span className="text-[11px] text-slate-500 font-medium">
                             {report.category?.name || 'Kategori'}
                           </span>
+                          {report.subcategory && (
+                            <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.2 rounded font-semibold border border-purple-200">
+                              {report.subcategory}
+                            </span>
+                          )}
                           {report.is_anonymous && (
                             <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-semibold border border-slate-200">
                               Anonim
@@ -693,12 +698,22 @@ export const AdminReportsTab: React.FC<AdminReportsTabProps> = ({ onNavigate }) 
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() => onNavigate('detail', report.id)}
+                            onClick={() => handleOpenReassignModal(report)}
                             className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
-                            title="Buka Ruang Obrolan & Riwayat Laporan"
+                            title="Alihkan / Disposisi Guru Pembimbing"
                           >
-                            <span>Detail</span>
-                            <ExternalLink className="w-3 h-3" />
+                            <ArrowRightLeft className="w-3 h-3" />
+                            <span>Disposisi</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenStatusModal(report)}
+                            className="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+                            title="Perbarui Status Laporan"
+                          >
+                            <Clock className="w-3 h-3" />
+                            <span>Status</span>
                           </button>
 
                           <button

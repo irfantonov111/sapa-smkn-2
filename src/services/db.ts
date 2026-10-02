@@ -444,6 +444,44 @@ class DatabaseService {
             parsed.counseling_appointments = [...INITIAL_COUNSELING_APPOINTMENTS];
           }
 
+          // Ensure categories match the 4 main BK service areas: Pribadi, Sosial, Belajar, Karier
+          if (!Array.isArray(parsed.categories) || parsed.categories.length === 0) {
+            parsed.categories = JSON.parse(JSON.stringify(INITIAL_CATEGORIES));
+          } else {
+            const hasBkStandard = parsed.categories.some((c: Category) =>
+              ['pribadi', 'sosial', 'belajar', 'karier'].includes((c.name || '').toLowerCase().trim())
+            );
+            if (!hasBkStandard) {
+              const categoryMapping: Record<string, { targetId: string; subcategory?: string }> = {
+                'cat-1': { targetId: 'cat-belajar', subcategory: 'Kesulitan Memahami Materi Pembelajaran' },
+                'cat-2': { targetId: 'cat-sosial', subcategory: 'Perundungan / Bullying (Verbal, Fisik, Siber)' },
+                'cat-3': { targetId: 'cat-sosial', subcategory: 'Konflik & Perselisihan dengan Teman Sebaya' },
+                'cat-4': { targetId: 'cat-belajar', subcategory: 'Sarana & Fasilitas Belajar Praktik / Lab' },
+                'cat-5': { targetId: 'cat-karier', subcategory: 'Persiapan Magang / Praktik Kerja Lapangan (PKL)' },
+                'cat-6': { targetId: 'cat-pribadi', subcategory: 'Kesehatan Mental & Ruang Aman Curhat' }
+              };
+
+              if (Array.isArray(parsed.reports)) {
+                parsed.reports.forEach((r: Report) => {
+                  const mapping = categoryMapping[r.category_id];
+                  if (mapping) {
+                    r.category_id = mapping.targetId;
+                    if (!r.subcategory) r.subcategory = mapping.subcategory;
+                  }
+                });
+              }
+              parsed.categories = JSON.parse(JSON.stringify(INITIAL_CATEGORIES));
+            } else {
+              // Ensure all categories have valid subcategories array
+              parsed.categories.forEach((c: Category) => {
+                if (!Array.isArray(c.subcategories) || c.subcategories.length === 0) {
+                  const initMatch = INITIAL_CATEGORIES.find(ic => ic.id === c.id || ic.name.toLowerCase() === c.name.toLowerCase());
+                  c.subcategories = initMatch?.subcategories ? [...initMatch.subcategories] : ['Umum / Lainnya'];
+                }
+              });
+            }
+          }
+
           // Bidirectional sync: make sure any class bk_teacher_id is included in teacher.assigned_class_ids
           if (Array.isArray(parsed.classes) && Array.isArray(parsed.teachers)) {
             for (const cls of parsed.classes) {
@@ -568,6 +606,7 @@ class DatabaseService {
         teachers: this.state.teachers,
         classes: this.state.classes,
         categories: this.state.categories,
+        counseling_appointments: this.state.counseling_appointments,
         system_settings: this.state.system_settings
       });
       return res.success;
@@ -877,7 +916,21 @@ class DatabaseService {
         }
         if (Array.isArray(d.counseling_appointments)) {
           if (isDbLive || d.counseling_appointments.length > 0) {
-            this.state.counseling_appointments = d.counseling_appointments;
+            const localMap = new Map<string, CounselingAppointment>(
+              (this.state.counseling_appointments || []).map(a => [a.id, a])
+            );
+            const mergedList: CounselingAppointment[] = d.counseling_appointments.map((srvApt: CounselingAppointment) => {
+              const localApt = localMap.get(srvApt.id);
+              if (localApt) {
+                const srvTime = new Date(srvApt.updated_at || srvApt.created_at || 0).getTime();
+                const locTime = new Date(localApt.updated_at || localApt.created_at || 0).getTime();
+                return locTime > srvTime ? localApt : srvApt;
+              }
+              return srvApt;
+            });
+            const serverIds = new Set(d.counseling_appointments.map((a: any) => a.id));
+            const unsyncedApts = (this.state.counseling_appointments || []).filter(a => !serverIds.has(a.id));
+            this.state.counseling_appointments = [...unsyncedApts, ...mergedList];
             updated = true;
           }
         }
@@ -1379,6 +1432,7 @@ class DatabaseService {
     currentUser: User,
     data: {
       category_id: string;
+      subcategory?: string;
       assigned_to: AssignedTo;
       assigned_teacher_id?: string | null;
       title: string;
@@ -1462,6 +1516,7 @@ class DatabaseService {
       report_code: reportCode,
       student_id: student.id,
       category_id: data.category_id,
+      subcategory: data.subcategory?.trim() || undefined,
       assigned_to: data.assigned_to,
       assigned_teacher_id: resolvedTeacherId,
       title: data.title.trim(),
@@ -1549,6 +1604,7 @@ class DatabaseService {
       id: newReport.id,
       userId: currentUser.id,
       category_id: data.category_id,
+      subcategory: data.subcategory?.trim() || undefined,
       assigned_to: data.assigned_to,
       assigned_teacher_id: resolvedTeacherId || data.assigned_teacher_id || null,
       title: data.title,
@@ -2070,6 +2126,7 @@ class DatabaseService {
   public addCategory(cat: Omit<Category, 'id'>): Category {
     const newCat: Category = {
       id: `cat-${Date.now()}`,
+      subcategories: cat.subcategories || [],
       ...cat
     };
     this.state.categories.push(newCat);
@@ -2080,7 +2137,8 @@ class DatabaseService {
       name: newCat.name,
       description: newCat.description,
       icon: newCat.icon,
-      color: newCat.color
+      color: newCat.color,
+      subcategories: newCat.subcategories || []
     });
     return newCat;
   }
@@ -2094,6 +2152,54 @@ class DatabaseService {
       // Sync to backend Supabase/PostgreSQL
       this.syncToServer(`/api/categories/${id}`, 'PUT', updates);
     }
+  }
+
+  public addSubcategory(categoryId: string, subcategoryName: string): boolean {
+    const cat = this.state.categories.find(c => c.id === categoryId);
+    if (!cat) return false;
+    const trimmed = subcategoryName.trim();
+    if (!trimmed) return false;
+    if (!Array.isArray(cat.subcategories)) cat.subcategories = [];
+    if (!cat.subcategories.includes(trimmed)) {
+      cat.subcategories.push(trimmed);
+      this.saveToStorage();
+      this.notifyListeners();
+      this.syncToServer(`/api/categories/${categoryId}`, 'PUT', { subcategories: cat.subcategories });
+      return true;
+    }
+    return false;
+  }
+
+  public updateSubcategory(categoryId: string, oldName: string, newName: string): boolean {
+    const cat = this.state.categories.find(c => c.id === categoryId);
+    if (!cat || !Array.isArray(cat.subcategories)) return false;
+    const trimmed = newName.trim();
+    if (!trimmed) return false;
+    const idx = cat.subcategories.indexOf(oldName);
+    if (idx !== -1) {
+      cat.subcategories[idx] = trimmed;
+      // Update any existing reports using this subcategory
+      this.state.reports.forEach(r => {
+        if (r.category_id === categoryId && r.subcategory === oldName) {
+          r.subcategory = trimmed;
+        }
+      });
+      this.saveToStorage();
+      this.notifyListeners();
+      this.syncToServer(`/api/categories/${categoryId}`, 'PUT', { subcategories: cat.subcategories });
+      return true;
+    }
+    return false;
+  }
+
+  public deleteSubcategory(categoryId: string, subcategoryName: string): boolean {
+    const cat = this.state.categories.find(c => c.id === categoryId);
+    if (!cat || !Array.isArray(cat.subcategories)) return false;
+    cat.subcategories = cat.subcategories.filter(s => s !== subcategoryName);
+    this.saveToStorage();
+    this.notifyListeners();
+    this.syncToServer(`/api/categories/${categoryId}`, 'PUT', { subcategories: cat.subcategories });
+    return true;
   }
 
   public deleteCategory(id: string): { success: boolean; message?: string } {
@@ -3287,17 +3393,21 @@ class DatabaseService {
       this.state.counseling_appointments = [...INITIAL_COUNSELING_APPOINTMENTS];
     }
     let list = [...this.state.counseling_appointments];
-    if (filter?.student_id) {
-      list = list.filter(a => a.student_id === filter.student_id);
+    if (filter?.student_id || filter?.student_user_id) {
+      const sId = filter.student_id;
+      const uId = filter.student_user_id;
+      list = list.filter(a =>
+        (sId && (a.student_id === sId || a.student_user_id === sId)) ||
+        (uId && (a.student_user_id === uId || a.student_id === uId))
+      );
     }
-    if (filter?.student_user_id) {
-      list = list.filter(a => a.student_user_id === filter.student_user_id);
-    }
-    if (filter?.teacher_id) {
-      list = list.filter(a => a.teacher_id === filter.teacher_id);
-    }
-    if (filter?.teacher_user_id) {
-      list = list.filter(a => a.teacher_user_id === filter.teacher_user_id);
+    if (filter?.teacher_id || filter?.teacher_user_id) {
+      const tId = filter.teacher_id;
+      const uId = filter.teacher_user_id;
+      list = list.filter(a =>
+        (tId && (a.teacher_id === tId || a.teacher_user_id === tId)) ||
+        (uId && (a.teacher_user_id === uId || a.teacher_id === uId))
+      );
     }
     if (filter?.status) {
       list = list.filter(a => a.status === filter.status);
@@ -3396,7 +3506,10 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
-    this.syncToServer(`/api/counseling/appointments/${appointmentId}/accept`, 'PATCH', { notes });
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}/accept`, 'PATCH', {
+      notes,
+      appointment: apt
+    });
 
     return apt;
   }
@@ -3420,6 +3533,8 @@ class DatabaseService {
     apt.status = 'dijadwalkan_ulang';
     apt.confirmed_date = newDate;
     apt.confirmed_time = newTime;
+    apt.rescheduled_date = newDate;
+    apt.rescheduled_time = newTime;
     apt.reschedule_reason = reason;
     apt.updated_at = now;
 
@@ -3438,7 +3553,8 @@ class DatabaseService {
     this.syncToServer(`/api/counseling/appointments/${appointmentId}/reschedule`, 'PATCH', {
       newDate,
       newTime,
-      reason
+      reason,
+      appointment: apt
     });
 
     return apt;
@@ -3474,7 +3590,10 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
-    this.syncToServer(`/api/counseling/appointments/${appointmentId}/complete`, 'PATCH', { notes });
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}/complete`, 'PATCH', {
+      notes,
+      appointment: apt
+    });
 
     return apt;
   }
@@ -3512,7 +3631,10 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
-    this.syncToServer(`/api/counseling/appointments/${appointmentId}/cancel`, 'PATCH', { reason });
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}/cancel`, 'PATCH', {
+      reason,
+      appointment: apt
+    });
 
     return apt;
   }
@@ -3597,6 +3719,10 @@ class DatabaseService {
 
     const now = new Date().toISOString();
     Object.assign(apt, updates, { updated_at: now });
+    if (apt.status === 'dijadwalkan_ulang') {
+      apt.rescheduled_date = apt.confirmed_date || apt.requested_date;
+      apt.rescheduled_time = apt.confirmed_time || apt.requested_time;
+    }
 
     if (notifyStudent && apt.student_user_id) {
       this.state.notifications.unshift({
@@ -3611,7 +3737,10 @@ class DatabaseService {
 
     this.saveToStorage();
     this.notifyListeners();
-    this.syncToServer(`/api/counseling/appointments/${appointmentId}`, 'PUT', updates);
+    this.syncToServer(`/api/counseling/appointments/${appointmentId}`, 'PUT', {
+      ...updates,
+      appointment: apt
+    });
 
     return apt;
   }
@@ -3633,10 +3762,26 @@ class DatabaseService {
       if (res.ok) {
         const list = await res.json();
         if (Array.isArray(list)) {
-          this.state.counseling_appointments = list;
-          this.saveToStorage();
-          this.notifyListeners();
-          return list;
+          if (list.length > 0) {
+            const localMap = new Map<string, CounselingAppointment>(
+              (this.state.counseling_appointments || []).map(a => [a.id, a])
+            );
+            const mergedList: CounselingAppointment[] = list.map((srvApt: CounselingAppointment) => {
+              const localApt = localMap.get(srvApt.id);
+              if (localApt) {
+                const srvTime = new Date(srvApt.updated_at || srvApt.created_at || 0).getTime();
+                const locTime = new Date(localApt.updated_at || localApt.created_at || 0).getTime();
+                return locTime > srvTime ? localApt : srvApt;
+              }
+              return srvApt;
+            });
+            const serverIds = new Set(list.map((a: any) => a.id));
+            const unsyncedApts = (this.state.counseling_appointments || []).filter(a => !serverIds.has(a.id));
+            this.state.counseling_appointments = [...unsyncedApts, ...mergedList];
+            this.saveToStorage();
+            this.notifyListeners();
+          }
+          return this.getCounselingAppointments();
         }
       }
     } catch {

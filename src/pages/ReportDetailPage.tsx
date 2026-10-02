@@ -278,6 +278,11 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({ reportId, on
                 <span className="text-xs font-bold text-slate-600">
                   {report.category.name}
                 </span>
+                {report.subcategory && (
+                  <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                    {report.subcategory}
+                  </span>
+                )}
                 <UrgencyBadge urgency={report.urgency} />
                 <PrivacyBadge privacy={report.privacy} />
               </div>

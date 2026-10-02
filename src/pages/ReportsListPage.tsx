@@ -558,6 +558,11 @@ export const ReportsListPage: React.FC<ReportsListPageProps> = ({
                       <span className="text-xs font-semibold text-slate-500">
                         {rep.category.name}
                       </span>
+                      {rep.subcategory && (
+                        <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                          {rep.subcategory}
+                        </span>
+                      )}
                       {rep.student && (
                         <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                           {rep.student.name} ({rep.student.class_name})

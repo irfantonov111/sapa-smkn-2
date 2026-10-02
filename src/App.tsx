@@ -122,6 +122,9 @@ const MainApp: React.FC = () => {
         return <ReportsListPage key="resolved" onNavigate={handleNavigate} statusFilterPreset="selesai" />;
 
       case 'detail':
+        if (currentUser.role === 'admin') {
+          return <AdminDashboard key="admin-reports" onNavigate={handleNavigate} activeSubTab="reports" />;
+        }
         return selectedReportId ? (
           <ReportDetailPage reportId={selectedReportId} onNavigate={handleNavigate} />
         ) : (

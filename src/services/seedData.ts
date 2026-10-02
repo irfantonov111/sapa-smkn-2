@@ -15,52 +15,69 @@ import { hashPassword, encryptNip } from '../utils/crypto';
 
 export const INITIAL_CATEGORIES: Category[] = [
   {
-    id: 'cat-1',
-    name: 'Kesulitan Belajar & Akademik',
-    description: 'Kendala materi pelajaran kurikulum, pemahaman konsep, tugas kejuruan, atau metode belajar guru',
+    id: 'cat-pribadi',
+    name: 'Pribadi',
+    description: 'Bimbingan untuk membantu memahami, menilai, dan mengembangkan potensi, emosi, kesehatan mental, serta pemecahan masalah pribadi.',
+    icon: 'Heart',
+    color: 'purple',
+    active: true,
+    subcategories: [
+      'Kepercayaan Diri & Konsep Diri',
+      'Pengelolaan Emosi, Stres & Kecemasan',
+      'Masalah Hubungan Keluarga & Rumah Tangga',
+      'Kedisiplinan & Kebiasaan Perilaku Diri',
+      'Kesehatan Mental & Ruang Aman Curhat',
+      'Lainnya seputar Masalah Pribadi'
+    ]
+  },
+  {
+    id: 'cat-sosial',
+    name: 'Sosial',
+    description: 'Bimbingan untuk membantu mengembangkan hubungan sosial yang sehat dengan teman sebaya, adaptasi lingkungan sekolah, dan anti perundungan.',
+    icon: 'Users',
+    color: 'rose',
+    active: true,
+    subcategories: [
+      'Perundungan / Bullying (Verbal, Fisik, Siber)',
+      'Konflik & Perselisihan dengan Teman Sebaya',
+      'Adaptasi Sosial & Rasa Terisolasi / Dikucilkan',
+      'Komunikasi Interpersonal & Keterbukaan',
+      'Masalah Hubungan Teman Sekelas',
+      'Lainnya seputar Masalah Sosial'
+    ]
+  },
+  {
+    id: 'cat-belajar',
+    name: 'Belajar',
+    description: 'Bimbingan untuk memecahkan kesulitan belajar, meningkatkan motivasi akademik, manajemen waktu tugas kejuruan, dan metode belajar efektif.',
     icon: 'BookOpen',
     color: 'blue',
-    active: true
+    active: true,
+    subcategories: [
+      'Kesulitan Memahami Materi Pembelajaran',
+      'Penurunan Motivasi & Rasa Malas Belajar',
+      'Manajemen Waktu Belajar & Beban Tugas',
+      'Kecemasan Menghadapi Ujian / Asesmen',
+      'Komunikasi Belajar dengan Guru Pengampu',
+      'Sarana & Fasilitas Belajar Praktik / Lab',
+      'Lainnya seputar Kesulitan Belajar'
+    ]
   },
   {
-    id: 'cat-2',
-    name: 'Bullying / Perundungan',
-    description: 'Tindakan intimidasi fisik, verbal, pengucilan, atau perundungan siber (cyberbullying)',
-    icon: 'AlertTriangle',
-    color: 'rose',
-    active: true
-  },
-  {
-    id: 'cat-3',
-    name: 'Masalah Pertemanan & Relasi Sosial',
-    description: 'Konflik antarteman sebaya, adaptasi sosial di kelas, rasa cemas dikucilkan dalam kelompok',
-    icon: 'Users',
-    color: 'amber',
-    active: true
-  },
-  {
-    id: 'cat-4',
-    name: 'Aspirasi & Masukan Fasilitas KBM',
-    description: 'Aspirasi peralatan bengkel/lab, kebersihan kelas, kegiatan ekstrakurikuler, atau sarana belajar',
-    icon: 'Lightbulb',
+    id: 'cat-karier',
+    name: 'Karier',
+    description: 'Bimbingan untuk mengenali minat bakat, perencanaan kelanjutan studi perguruan tinggi, persiapan magang/PKL industri, dan dunia kerja.',
+    icon: 'GraduationCap',
     color: 'emerald',
-    active: true
-  },
-  {
-    id: 'cat-5',
-    name: 'Konseling Karir, Magang & PKL',
-    description: 'Konsultasi minat bakat industri, persiapan magang kerja vokasi, dan pilihan kelanjutan studi/kerja',
-    icon: 'Briefcase',
-    color: 'purple',
-    active: true
-  },
-  {
-    id: 'cat-6',
-    name: 'Kesehatan Mental & Masalah Personal',
-    description: 'Kendala kecemasan pribadi, motivasi diri, hubungan keluarga, atau hal lain yang butuh ruang aman',
-    icon: 'Heart',
-    color: 'indigo',
-    active: true
+    active: true,
+    subcategories: [
+      'Eksplorasi Minat, Bakat & Potensi Diri',
+      'Perencanaan Kuliah / Perguruan Tinggi (SNBP, SNBT, Kedinasan)',
+      'Persiapan Magang / Praktik Kerja Lapangan (PKL)',
+      'Kesiapan Memasuki Dunia Kerja & Industri',
+      'Pemilihan Konsentrasi Keahlian Kejuruan',
+      'Lainnya seputar Rencana Karier & Masa Depan'
+    ]
   }
 ];
 
@@ -21638,7 +21655,8 @@ export const INITIAL_REPORTS: Report[] = [
     id: 'rep-welcome-demo',
     report_code: 'AC-00001',
     student_id: 'std-x-tkj-1-01',
-    category_id: 'cat-1',
+    category_id: 'cat-belajar',
+    subcategory: 'Kesulitan Memahami Materi Pembelajaran',
     title: 'Konsultasi Belajar & Adaptasi Jurusan TKJ',
     description: 'Ingin berdiskusi mengenai penyesuaian materi kejuruan dasar jaringan di awal semester ini.',
     urgency: 'sedang',

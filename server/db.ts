@@ -159,6 +159,46 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   sign_nip_counseling: 'NIP. 197508121999032001'
 };
 
+const INITIAL_COUNSELING_APPOINTMENTS: CounselingAppointment[] = [
+  {
+    id: 'apt-1',
+    student_id: 'std-1',
+    student_user_id: 'usr-student-1',
+    student_name: 'Budi Santoso',
+    student_class_name: 'X RPL 1',
+    teacher_id: 'tch-bk-1',
+    teacher_user_id: 'usr-bk-1',
+    teacher_name: 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.',
+    requested_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    requested_time: '10:00',
+    topic: 'Konsultasi kesulitan fokus belajar dan rencana pemilihan peminatan kejuruan',
+    counseling_type: 'tatap_muka',
+    status: 'menunggu',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'apt-2',
+    student_id: 'std-2',
+    student_user_id: 'usr-student-2',
+    student_name: 'Siti Rahmawati',
+    student_class_name: 'X RPL 2',
+    teacher_id: 'tch-bk-1',
+    teacher_user_id: 'usr-bk-1',
+    teacher_name: 'Dra. Hj. Sri Wahyuni, M.Psi, Kons.',
+    requested_date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+    requested_time: '09:30',
+    confirmed_date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+    confirmed_time: '13:30',
+    topic: 'Bimbingan adaptasi sosial dan manajemen stres menghadapi ujian',
+    counseling_type: 'tatap_muka',
+    status: 'dijadwalkan_ulang',
+    reschedule_reason: 'Mohon maaf pada pukul 09:30 ada rapat dinas kurikulum. Jadwal konseling disesuaikan ke jam 13:30 setelah istirahat kedua di Ruang BK ya.',
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    updated_at: new Date().toISOString()
+  }
+];
+
 const memoryStore: MemoryStore = {
   users: JSON.parse(JSON.stringify(INITIAL_USERS)),
   students: JSON.parse(JSON.stringify(INITIAL_STUDENTS)),
@@ -171,7 +211,7 @@ const memoryStore: MemoryStore = {
   notifications: JSON.parse(JSON.stringify(INITIAL_NOTIFICATIONS)),
   announcements: JSON.parse(JSON.stringify(INITIAL_ANNOUNCEMENTS)),
   mood_checks: JSON.parse(JSON.stringify(INITIAL_MOOD_CHECKS)),
-  counseling_appointments: [],
+  counseling_appointments: JSON.parse(JSON.stringify(INITIAL_COUNSELING_APPOINTMENTS)),
   system_settings: { ...DEFAULT_SYSTEM_SETTINGS }
 };
 
@@ -312,6 +352,8 @@ export async function initDatabase(): Promise<{ isPostgres: boolean; error?: str
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_name TEXT;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(20);
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_size VARCHAR(50);
+      ALTER TABLE categories ADD COLUMN IF NOT EXISTS subcategories JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE reports ADD COLUMN IF NOT EXISTS subcategory VARCHAR(150);
 
       CREATE TABLE IF NOT EXISTS report_status_history (
         id VARCHAR(50) PRIMARY KEY,
@@ -1167,12 +1209,13 @@ export async function createCategory(cat: Omit<Category, 'id'>): Promise<Categor
   const newCat: Category = {
     ...cat,
     id: `cat-${Date.now()}`,
+    subcategories: cat.subcategories || [],
     active: true
   };
   if (isPostgresConnected && pool) {
     await pool.query(
-      'INSERT INTO categories (id, name, description, icon, color, active) VALUES ($1, $2, $3, $4, $5, $6)',
-      [newCat.id, newCat.name, newCat.description, newCat.icon, newCat.color, newCat.active]
+      'INSERT INTO categories (id, name, description, icon, color, active, subcategories) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [newCat.id, newCat.name, newCat.description, newCat.icon, newCat.color, newCat.active, JSON.stringify(newCat.subcategories || [])]
     );
     return newCat;
   }
@@ -1416,6 +1459,7 @@ export async function createReport(data: {
     report_code: reportCode,
     student_id: studentId,
     category_id: data.category_id,
+    subcategory: (data as any).subcategory || undefined,
     assigned_to: data.assigned_to,
     assigned_teacher_id: data.assigned_teacher_id || null,
     title: data.title,
@@ -1439,10 +1483,10 @@ export async function createReport(data: {
 
   if (isPostgresConnected && pool) {
     await pool.query(
-      `INSERT INTO reports (id, report_code, student_id, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, status, attachments, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      `INSERT INTO reports (id, report_code, student_id, category_id, subcategory, assigned_to, assigned_teacher_id, title, description, urgency, privacy, status, attachments, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
-        newReport.id, newReport.report_code, newReport.student_id, newReport.category_id,
+        newReport.id, newReport.report_code, newReport.student_id, newReport.category_id, newReport.subcategory || null,
         newReport.assigned_to, newReport.assigned_teacher_id, newReport.title, newReport.description, newReport.urgency,
         newReport.privacy, newReport.status, JSON.stringify(attachments), newReport.created_at, newReport.updated_at
       ]
@@ -1744,6 +1788,7 @@ export async function resetDatabase() {
     memoryStore.notifications = JSON.parse(JSON.stringify(INITIAL_NOTIFICATIONS));
     memoryStore.announcements = JSON.parse(JSON.stringify(INITIAL_ANNOUNCEMENTS));
     memoryStore.mood_checks = JSON.parse(JSON.stringify(INITIAL_MOOD_CHECKS));
+    memoryStore.counseling_appointments = JSON.parse(JSON.stringify(INITIAL_COUNSELING_APPOINTMENTS));
   }
   return { success: true, message: 'Database reset successfully' };
 }
@@ -2404,6 +2449,7 @@ export async function syncStateFromClient(payload: {
   teachers?: Teacher[];
   classes?: SchoolClass[];
   categories?: Category[];
+  counseling_appointments?: CounselingAppointment[];
   system_settings?: SystemSettings;
 }): Promise<boolean> {
   if (Array.isArray(payload.classes)) {
@@ -2420,6 +2466,25 @@ export async function syncStateFromClient(payload: {
   }
   if (Array.isArray(payload.categories) && payload.categories.length > 0) {
     memoryStore.categories = payload.categories;
+  }
+  if (Array.isArray(payload.counseling_appointments) && payload.counseling_appointments.length > 0) {
+    if (!memoryStore.counseling_appointments) {
+      memoryStore.counseling_appointments = [];
+    }
+    const existingMap = new Map(memoryStore.counseling_appointments.map(a => [a.id, a]));
+    for (const incoming of payload.counseling_appointments) {
+      const existing = existingMap.get(incoming.id);
+      if (!existing) {
+        existingMap.set(incoming.id, incoming);
+      } else {
+        const incTime = new Date(incoming.updated_at || incoming.created_at || 0).getTime();
+        const extTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+        if (incTime >= extTime) {
+          existingMap.set(incoming.id, incoming);
+        }
+      }
+    }
+    memoryStore.counseling_appointments = Array.from(existingMap.values());
   }
   if (payload.system_settings && typeof payload.system_settings === 'object') {
     memoryStore.system_settings = {
@@ -2476,6 +2541,7 @@ export async function updateCategoryDetails(categoryId: string, data: Partial<Ca
     if (data.icon !== undefined) { fields.push(`icon = $${idx++}`); values.push(data.icon); }
     if (data.color !== undefined) { fields.push(`color = $${idx++}`); values.push(data.color); }
     if (data.active !== undefined) { fields.push(`active = $${idx++}`); values.push(data.active); }
+    if ((data as any).subcategories !== undefined) { fields.push(`subcategories = $${idx++}::jsonb`); values.push(JSON.stringify((data as any).subcategories)); }
 
     if (fields.length > 0) {
       values.push(categoryId);
@@ -2613,13 +2679,21 @@ export async function createCounselingAppointment(data: Partial<CounselingAppoin
   return newAppointment;
 }
 
-export async function acceptCounselingAppointment(id: string, notes?: string): Promise<CounselingAppointment | null> {
+export async function acceptCounselingAppointment(
+  id: string,
+  notes?: string,
+  fallbackApt?: Partial<CounselingAppointment>
+): Promise<CounselingAppointment | null> {
   const now = new Date().toISOString();
   if (isPostgresConnected && pool) {
     try {
       const res = await pool.query(
         `UPDATE counseling_appointments
-         SET status = 'disetujui', notes = COALESCE($1, notes), updated_at = $2
+         SET status = 'disetujui',
+             confirmed_date = COALESCE(confirmed_date, requested_date),
+             confirmed_time = COALESCE(confirmed_time, requested_time),
+             notes = COALESCE($1, notes),
+             updated_at = $2
          WHERE id = $3
          RETURNING *`,
         [notes || null, now, id]
@@ -2630,9 +2704,17 @@ export async function acceptCounselingAppointment(id: string, notes?: string): P
     }
   }
 
-  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (!memoryStore.counseling_appointments) {
+    memoryStore.counseling_appointments = [];
+  }
+  let apt = memoryStore.counseling_appointments.find(a => a.id === id);
+  if (!apt && fallbackApt) {
+    apt = await createCounselingAppointment({ ...fallbackApt, id });
+  }
   if (apt) {
     apt.status = 'disetujui';
+    apt.confirmed_date = apt.confirmed_date || apt.requested_date;
+    apt.confirmed_time = apt.confirmed_time || apt.requested_time;
     if (notes) apt.notes = notes;
     apt.updated_at = now;
     return apt;
@@ -2644,7 +2726,8 @@ export async function rescheduleCounselingAppointment(
   id: string,
   newDate: string,
   newTime: string,
-  reason: string
+  reason: string,
+  fallbackApt?: Partial<CounselingAppointment>
 ): Promise<CounselingAppointment | null> {
   const now = new Date().toISOString();
   if (isPostgresConnected && pool) {
@@ -2662,11 +2745,19 @@ export async function rescheduleCounselingAppointment(
     }
   }
 
-  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (!memoryStore.counseling_appointments) {
+    memoryStore.counseling_appointments = [];
+  }
+  let apt = memoryStore.counseling_appointments.find(a => a.id === id);
+  if (!apt && fallbackApt) {
+    apt = await createCounselingAppointment({ ...fallbackApt, id });
+  }
   if (apt) {
     apt.status = 'dijadwalkan_ulang';
     apt.confirmed_date = newDate;
     apt.confirmed_time = newTime;
+    apt.rescheduled_date = newDate;
+    apt.rescheduled_time = newTime;
     apt.reschedule_reason = reason;
     apt.updated_at = now;
     return apt;
@@ -2674,7 +2765,11 @@ export async function rescheduleCounselingAppointment(
   return null;
 }
 
-export async function completeCounselingAppointment(id: string, notes?: string): Promise<CounselingAppointment | null> {
+export async function completeCounselingAppointment(
+  id: string,
+  notes?: string,
+  fallbackApt?: Partial<CounselingAppointment>
+): Promise<CounselingAppointment | null> {
   const now = new Date().toISOString();
   if (isPostgresConnected && pool) {
     try {
@@ -2691,7 +2786,13 @@ export async function completeCounselingAppointment(id: string, notes?: string):
     }
   }
 
-  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (!memoryStore.counseling_appointments) {
+    memoryStore.counseling_appointments = [];
+  }
+  let apt = memoryStore.counseling_appointments.find(a => a.id === id);
+  if (!apt && fallbackApt) {
+    apt = await createCounselingAppointment({ ...fallbackApt, id });
+  }
   if (apt) {
     apt.status = 'selesai';
     if (notes) apt.notes = notes;
@@ -2701,7 +2802,11 @@ export async function completeCounselingAppointment(id: string, notes?: string):
   return null;
 }
 
-export async function cancelCounselingAppointment(id: string, reason?: string): Promise<CounselingAppointment | null> {
+export async function cancelCounselingAppointment(
+  id: string,
+  reason?: string,
+  fallbackApt?: Partial<CounselingAppointment>
+): Promise<CounselingAppointment | null> {
   const now = new Date().toISOString();
   if (isPostgresConnected && pool) {
     try {
@@ -2718,7 +2823,13 @@ export async function cancelCounselingAppointment(id: string, reason?: string): 
     }
   }
 
-  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (!memoryStore.counseling_appointments) {
+    memoryStore.counseling_appointments = [];
+  }
+  let apt = memoryStore.counseling_appointments.find(a => a.id === id);
+  if (!apt && fallbackApt) {
+    apt = await createCounselingAppointment({ ...fallbackApt, id });
+  }
   if (apt) {
     apt.status = 'dibatalkan';
     if (reason) apt.reschedule_reason = reason;
@@ -2730,24 +2841,25 @@ export async function cancelCounselingAppointment(id: string, reason?: string): 
 
 export async function updateCounselingAppointment(
   id: string,
-  data: Partial<CounselingAppointment>
+  data: Partial<CounselingAppointment> & { appointment?: Partial<CounselingAppointment> }
 ): Promise<CounselingAppointment | null> {
   const now = new Date().toISOString();
+  const { appointment: fallbackApt, ...cleanUpdates } = data;
   if (isPostgresConnected && pool) {
     try {
       const fields: string[] = [];
       const values: any[] = [];
       let idx = 1;
 
-      if (data.topic !== undefined) { fields.push(`topic = $${idx++}`); values.push(data.topic.trim()); }
-      if (data.counseling_type !== undefined) { fields.push(`counseling_type = $${idx++}`); values.push(data.counseling_type); }
-      if (data.requested_date !== undefined) { fields.push(`requested_date = $${idx++}`); values.push(data.requested_date); }
-      if (data.requested_time !== undefined) { fields.push(`requested_time = $${idx++}`); values.push(data.requested_time); }
-      if (data.confirmed_date !== undefined) { fields.push(`confirmed_date = $${idx++}`); values.push(data.confirmed_date || null); }
-      if (data.confirmed_time !== undefined) { fields.push(`confirmed_time = $${idx++}`); values.push(data.confirmed_time || null); }
-      if (data.status !== undefined) { fields.push(`status = $${idx++}`); values.push(data.status); }
-      if (data.reschedule_reason !== undefined) { fields.push(`reschedule_reason = $${idx++}`); values.push(data.reschedule_reason || null); }
-      if (data.notes !== undefined) { fields.push(`notes = $${idx++}`); values.push(data.notes || null); }
+      if (cleanUpdates.topic !== undefined) { fields.push(`topic = $${idx++}`); values.push(cleanUpdates.topic.trim()); }
+      if (cleanUpdates.counseling_type !== undefined) { fields.push(`counseling_type = $${idx++}`); values.push(cleanUpdates.counseling_type); }
+      if (cleanUpdates.requested_date !== undefined) { fields.push(`requested_date = $${idx++}`); values.push(cleanUpdates.requested_date); }
+      if (cleanUpdates.requested_time !== undefined) { fields.push(`requested_time = $${idx++}`); values.push(cleanUpdates.requested_time); }
+      if (cleanUpdates.confirmed_date !== undefined) { fields.push(`confirmed_date = $${idx++}`); values.push(cleanUpdates.confirmed_date || null); }
+      if (cleanUpdates.confirmed_time !== undefined) { fields.push(`confirmed_time = $${idx++}`); values.push(cleanUpdates.confirmed_time || null); }
+      if (cleanUpdates.status !== undefined) { fields.push(`status = $${idx++}`); values.push(cleanUpdates.status); }
+      if (cleanUpdates.reschedule_reason !== undefined) { fields.push(`reschedule_reason = $${idx++}`); values.push(cleanUpdates.reschedule_reason || null); }
+      if (cleanUpdates.notes !== undefined) { fields.push(`notes = $${idx++}`); values.push(cleanUpdates.notes || null); }
 
       fields.push(`updated_at = $${idx++}`);
       values.push(now);
@@ -2763,9 +2875,19 @@ export async function updateCounselingAppointment(
     }
   }
 
-  const apt = memoryStore.counseling_appointments?.find(a => a.id === id);
+  if (!memoryStore.counseling_appointments) {
+    memoryStore.counseling_appointments = [];
+  }
+  let apt = memoryStore.counseling_appointments.find(a => a.id === id);
+  if (!apt && fallbackApt) {
+    apt = await createCounselingAppointment({ ...fallbackApt, ...cleanUpdates, id });
+  }
   if (apt) {
-    Object.assign(apt, data, { updated_at: now });
+    Object.assign(apt, cleanUpdates, { updated_at: now });
+    if (apt.status === 'dijadwalkan_ulang') {
+      apt.rescheduled_date = apt.confirmed_date || apt.requested_date;
+      apt.rescheduled_time = apt.confirmed_time || apt.requested_time;
+    }
     return apt;
   }
   return null;

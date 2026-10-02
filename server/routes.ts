@@ -530,7 +530,7 @@ apiRouter.get('/categories', async (req: Request, res: Response) => {
 
 apiRouter.post('/categories', async (req: Request, res: Response) => {
   try {
-    const { name, description, icon, color } = req.body;
+    const { name, description, icon, color, subcategories } = req.body;
     if (!name) return res.status(400).json({ error: 'Nama kategori wajib diisi' });
 
     const newCategory = await createCategory({
@@ -538,6 +538,7 @@ apiRouter.post('/categories', async (req: Request, res: Response) => {
       description: description || '',
       icon: icon || 'MessageCircle',
       color: color || 'blue',
+      subcategories: Array.isArray(subcategories) ? subcategories : [],
       active: true
     });
     res.status(201).json(newCategory);
@@ -657,7 +658,7 @@ apiRouter.delete('/announcements/:id', async (req: Request, res: Response) => {
 // Create Report
 apiRouter.post('/reports', async (req: Request, res: Response) => {
   try {
-    const { id, userId, category_id, assigned_to, assigned_teacher_id, title, description, urgency, privacy, attachments } = req.body;
+    const { id, userId, category_id, subcategory, assigned_to, assigned_teacher_id, title, description, urgency, privacy, attachments } = req.body;
 
     if (!userId || !category_id || !assigned_to || !title || !description || !urgency || !privacy) {
       return res.status(400).json({ error: 'Field wajib belum lengkap diisi' });
@@ -667,6 +668,7 @@ apiRouter.post('/reports', async (req: Request, res: Response) => {
       id,
       userId,
       category_id,
+      subcategory,
       assigned_to,
       assigned_teacher_id: assigned_teacher_id || null,
       title,
@@ -674,7 +676,7 @@ apiRouter.post('/reports', async (req: Request, res: Response) => {
       urgency,
       privacy,
       attachments: Array.isArray(attachments) ? attachments : []
-    });
+    } as any);
 
     res.status(201).json(newReport);
   } catch (err: any) {
@@ -847,8 +849,8 @@ apiRouter.post('/counseling/appointments', async (req: Request, res: Response) =
 apiRouter.patch('/counseling/appointments/:id/accept', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { notes } = req.body;
-    const updated = await acceptCounselingAppointment(id, notes);
+    const { notes, appointment } = req.body;
+    const updated = await acceptCounselingAppointment(id, notes, appointment);
     if (!updated) {
       return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
     }
@@ -861,11 +863,11 @@ apiRouter.patch('/counseling/appointments/:id/accept', async (req: Request, res:
 apiRouter.patch('/counseling/appointments/:id/reschedule', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { newDate, newTime, reason } = req.body;
+    const { newDate, newTime, reason, appointment } = req.body;
     if (!newDate || !newTime || !reason) {
       return res.status(400).json({ error: 'Tanggal baru, jam baru, dan alasan perubahan jadwal wajib diisi' });
     }
-    const updated = await rescheduleCounselingAppointment(id, newDate, newTime, reason);
+    const updated = await rescheduleCounselingAppointment(id, newDate, newTime, reason, appointment);
     if (!updated) {
       return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
     }
@@ -878,8 +880,8 @@ apiRouter.patch('/counseling/appointments/:id/reschedule', async (req: Request, 
 apiRouter.patch('/counseling/appointments/:id/complete', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { notes } = req.body;
-    const updated = await completeCounselingAppointment(id, notes);
+    const { notes, appointment } = req.body;
+    const updated = await completeCounselingAppointment(id, notes, appointment);
     if (!updated) {
       return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
     }
@@ -892,8 +894,8 @@ apiRouter.patch('/counseling/appointments/:id/complete', async (req: Request, re
 apiRouter.patch('/counseling/appointments/:id/cancel', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
-    const updated = await cancelCounselingAppointment(id, reason);
+    const { reason, appointment } = req.body;
+    const updated = await cancelCounselingAppointment(id, reason, appointment);
     if (!updated) {
       return res.status(404).json({ error: 'Data janji konseling tidak ditemukan' });
     }

@@ -13,7 +13,10 @@ import {
   CheckCircle2,
   ShieldCheck,
   ShieldAlert,
-  UserX
+  UserX,
+  Heart,
+  GraduationCap,
+  Briefcase
 } from 'lucide-react';
 import { ReportStatus, ReportUrgency, ReportPrivacy } from '../types/database';
 
@@ -24,6 +27,12 @@ export const CategoryIcon: React.FC<{
 }> = ({ iconName, color = 'blue', className = 'w-5 h-5' }) => {
   const getIcon = () => {
     switch (iconName) {
+      case 'Heart':
+        return <Heart className={className} />;
+      case 'GraduationCap':
+        return <GraduationCap className={className} />;
+      case 'Briefcase':
+        return <Briefcase className={className} />;
       case 'BookOpen':
         return <BookOpen className={className} />;
       case 'AlertTriangle':
@@ -34,6 +43,8 @@ export const CategoryIcon: React.FC<{
         return <Lightbulb className={className} />;
       case 'MessageCircle':
         return <MessageCircle className={className} />;
+      case 'ShieldAlert':
+        return <ShieldAlert className={className} />;
       default:
         return <HelpCircle className={className} />;
     }
@@ -41,14 +52,23 @@ export const CategoryIcon: React.FC<{
 
   const getColorClasses = () => {
     switch (color) {
+      case 'purple':
+        return 'text-purple-600 bg-purple-50 border-purple-200';
       case 'rose':
+      case 'red':
         return 'text-rose-600 bg-rose-50 border-rose-200';
       case 'amber':
+      case 'yellow':
         return 'text-amber-600 bg-amber-50 border-amber-200';
       case 'emerald':
+      case 'green':
         return 'text-emerald-600 bg-emerald-50 border-emerald-200';
       case 'indigo':
         return 'text-indigo-600 bg-indigo-50 border-indigo-200';
+      case 'orange':
+        return 'text-orange-600 bg-orange-50 border-orange-200';
+      case 'slate':
+        return 'text-slate-600 bg-slate-100 border-slate-200';
       case 'blue':
       default:
         return 'text-blue-600 bg-blue-50 border-blue-200';
@@ -148,19 +168,12 @@ export const PrivacyBadge: React.FC<{ privacy: ReportPrivacy }> = ({ privacy }) 
           Anonim
         </span>
       );
-    case 'terbatas':
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-          <ShieldAlert className="w-3 h-3" />
-          Identitas Terbatas
-        </span>
-      );
     case 'terbuka':
     default:
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
           <ShieldCheck className="w-3 h-3" />
-          Identitas Terbuka
+          Terbuka
         </span>
       );
   }

@@ -113,16 +113,20 @@ export const PrintCounselingModal: React.FC<PrintCounselingModalProps> = ({
           >
             {/* KOP SURAT RESMI */}
             <div className="border-b-4 border-double border-slate-900 pb-3 mb-5 text-center relative">
-              <div className="flex items-center justify-center gap-4 mb-1">
+              <div className="flex flex-col sm:flex-row print:flex-row items-center justify-center gap-4 mb-1">
                 {logoUrl ? (
                   <img
                     src={logoUrl}
                     alt="Logo Sekolah"
-                    className="w-14 h-14 object-contain shrink-0"
+                    className="w-20 h-20 sm:w-[3cm] sm:h-[3cm] print:w-[3cm] print:h-[3cm] object-contain shrink-0"
+                    style={{ maxWidth: '3cm', maxHeight: '3cm' }}
                   />
                 ) : (
-                  <div className="w-14 h-14 rounded-full border-2 border-slate-800 flex items-center justify-center shrink-0 font-sans font-extrabold text-xs text-indigo-900 bg-slate-50">
-                    <Shield className="w-8 h-8 text-indigo-800 stroke-[2]" />
+                  <div
+                    className="w-20 h-20 sm:w-[3cm] sm:h-[3cm] print:w-[3cm] print:h-[3cm] rounded-full border-2 border-slate-800 flex items-center justify-center shrink-0 font-sans font-extrabold text-xs text-indigo-900 bg-slate-50"
+                    style={{ maxWidth: '3cm', maxHeight: '3cm' }}
+                  >
+                    <Shield className="w-10 h-10 text-indigo-800 stroke-[2]" />
                   </div>
                 )}
                 <div>
@@ -238,34 +242,25 @@ export const PrintCounselingModal: React.FC<PrintCounselingModalProps> = ({
                 {signCity ? `${signCity}, ` : 'Dicetak di Sekolah pada: '}{todayFormatted}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 text-center">
+              <div className="grid grid-cols-2 gap-6 text-center">
                 <div>
-                  <p className="font-semibold text-slate-700">Peserta Didik (Konseli),</p>
-                  <div className="h-16 flex items-end justify-center">
+                  <p className="font-semibold text-slate-700">Siswa / Peserta Didik,</p>
+                  <div className="h-20 flex items-end justify-center">
                     <p className="font-bold underline text-slate-900">{appointment.student_name}</p>
                   </div>
-                  <p className="text-[11px] text-slate-500">Kelas: {appointment.student_class_name || '-'}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Kelas: {appointment.student_class_name || '-'}</p>
                 </div>
 
                 <div>
-                  <p className="font-semibold text-slate-700">Guru Pembimbing BK,</p>
-                  <div className="h-16 flex items-end justify-center">
+                  <p className="font-semibold text-slate-700">Guru Bimbingan Konseling (BK),</p>
+                  <div className="h-20 flex items-end justify-center">
                     <p className="font-bold underline text-slate-900">
-                      {appointment.teacher_name || 'Guru BK'}
+                      {appointment.teacher_name || signName || 'Guru BK'}
                     </p>
                   </div>
-                  <p className="text-[11px] text-slate-500">Guru Bimbingan Konseling</p>
-                </div>
-
-                <div className="col-span-2 sm:col-span-1">
-                  <p className="font-semibold text-slate-700">Mengetahui,</p>
-                  <p className="text-[11px] text-slate-600">{signTitle}</p>
-                  <div className="h-14 flex items-end justify-center">
-                    <p className="font-bold underline text-slate-900">
-                      {signName}
-                    </p>
-                  </div>
-                  <p className="text-[11px] text-slate-500">{signNip}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {signNip || 'Guru Bimbingan Konseling'}
+                  </p>
                 </div>
               </div>
             </div>

@@ -109,20 +109,20 @@ export const AdminSettingsTab: React.FC = () => {
     category_id: 'cat-1',
     title: 'Contoh Laporan Konsultasi Akademik & Bimbingan Belajar Siswa',
     description: 'Siswa mengajukan permohonan bimbingan terkait manajemen waktu belajar dan persiapan praktik kerja lapangan.',
-    incident_date: new Date().toISOString().slice(0, 10),
-    location: 'Ruang Kelas XI RPL 1',
     urgency: 'sedang',
-    privacy: 'rahasia',
+    privacy: 'terbuka',
     assigned_to: 'guru_bk',
     status: 'ditindaklanjuti',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     category: {
-      id: 'cat-1',
-      name: 'Akademik & Belajar',
+      id: 'cat-belajar',
+      name: 'Belajar',
       icon: 'BookOpen',
       color: 'blue',
-      description: 'Masalah belajar dan akademik'
+      description: 'Masalah belajar dan akademik',
+      active: true,
+      subcategories: ['Kesulitan Memahami Materi Pembelajaran']
     },
     student: {
       nis: '2025101',
@@ -147,6 +147,7 @@ export const AdminSettingsTab: React.FC = () => {
     student_nis: '2025101',
     class_name: 'XI RPL 1',
     teacher_id: 'sample-teacher',
+    teacher_user_id: 'sample-teacher-user',
     teacher_name: 'Dra. Siti Aminah, M.Pd.',
     requested_date: new Date().toISOString().slice(0, 10),
     requested_time: '10:15',
@@ -251,15 +252,19 @@ export const AdminSettingsTab: React.FC = () => {
         <div className="bg-slate-100/80 p-4 sm:p-6 rounded-2xl border border-slate-200/80 overflow-x-auto">
           <div className="bg-white max-w-3xl mx-auto p-6 sm:p-8 rounded-xl shadow-md border border-slate-200 text-slate-900 font-serif">
             <div className="border-b-4 border-double border-slate-900 pb-3 mb-4 text-center relative">
-              <div className="flex items-center justify-center gap-4 mb-1">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-1">
                 {settings.logo_url ? (
                   <img
                     src={settings.logo_url}
                     alt="Logo Instansi"
-                    className="w-14 h-14 rounded-lg object-contain shrink-0"
+                    className="w-20 h-20 sm:w-[3cm] sm:h-[3cm] rounded-lg object-contain shrink-0"
+                    style={{ maxWidth: '3cm', maxHeight: '3cm' }}
                   />
                 ) : (
-                  <div className="w-12 h-12 rounded-xl border-2 border-slate-900 flex items-center justify-center shrink-0 font-sans font-black text-lg tracking-tighter">
+                  <div
+                    className="w-20 h-20 sm:w-[3cm] sm:h-[3cm] rounded-xl border-2 border-slate-900 flex items-center justify-center shrink-0 font-sans font-black text-lg tracking-tighter"
+                    style={{ maxWidth: '3cm', maxHeight: '3cm' }}
+                  >
                     {activePreviewTab === 'report' ? 'SAPA' : 'BK'}
                   </div>
                 )}
@@ -426,17 +431,23 @@ export const AdminSettingsTab: React.FC = () => {
               {/* Logo Kop Surat */}
               <div className="pt-2 border-t border-slate-100">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Logo Sekolah pada Kop Surat (Opsional)
+                  Logo Sekolah pada Kop Surat (Ukuran Responsif 3x3 cm)
                 </label>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                   {settings.logo_url ? (
-                    <div className="relative w-14 h-14 rounded-xl border border-slate-200 bg-slate-50 p-1 flex items-center justify-center shrink-0">
-                      <img src={settings.logo_url} alt="Logo" className="max-w-full max-h-full object-contain" />
+                    <div
+                      className="relative w-20 h-20 sm:w-[3cm] sm:h-[3cm] rounded-xl border border-slate-200 bg-slate-50 p-1.5 flex items-center justify-center shrink-0"
+                      style={{ maxWidth: '3cm', maxHeight: '3cm' }}
+                    >
+                      <img src={settings.logo_url} alt="Logo" className="w-full h-full object-contain" />
                     </div>
                   ) : (
-                    <div className="w-14 h-14 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-slate-400 shrink-0">
-                      <ImageIcon className="w-5 h-5" />
-                      <span className="text-[9px] font-bold">Default</span>
+                    <div
+                      className="w-20 h-20 sm:w-[3cm] sm:h-[3cm] rounded-xl border border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-slate-400 shrink-0"
+                      style={{ maxWidth: '3cm', maxHeight: '3cm' }}
+                    >
+                      <ImageIcon className="w-6 h-6" />
+                      <span className="text-[10px] font-bold mt-1">3 x 3 cm</span>
                     </div>
                   )}
 
